@@ -1,0 +1,1912 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PO Invoice Verifier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single working column — documents side by side, then the review table, then output.
+   Palette borrows the green of the authorization box on the reference invoice. */
+:root {
+  --bg: #f4f6f5;
+  --surface: #ffffff;
+  --surface-2: #eef2f0;
+  --ink: #17221e;
+  --ink-2: #4a5852;
+  --line: #d5ddd9;
+  --accent: #0b7a5c;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcf1e9;
+  --ok: #17803d; --ok-soft: #e1f3e6;
+  --bad: #b42318; --bad-soft: #fbe7e5;
+  --warn: #9a6200; --warn-soft: #fbf0d9;
+  --info: #3d5a80; --info-soft: #e5ecf5;
+  --focus: #1f8f6c;
+  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --r: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1513; --surface: #161e1b; --surface-2: #1d2724; --ink: #e5ece9; --ink-2: #a3b2ac; --line: #2c3a35;
+    --accent: #3fc79a; --accent-ink: #062018; --accent-soft: #173a2f;
+    --ok: #5fd08a; --ok-soft: #173322; --bad: #ff8a7d; --bad-soft: #3a1c19; --warn: #f0b84f; --warn-soft: #3a2c12; --info: #8fb2e0; --info-soft: #1c2738; --focus: #3fc79a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1513; --surface: #161e1b; --surface-2: #1d2724; --ink: #e5ece9; --ink-2: #a3b2ac; --line: #2c3a35;
+  --accent: #3fc79a; --accent-ink: #062018; --accent-soft: #173a2f;
+  --ok: #5fd08a; --ok-soft: #173322; --bad: #ff8a7d; --bad-soft: #3a1c19; --warn: #f0b84f; --warn-soft: #3a2c12; --info: #8fb2e0; --info-soft: #1c2738; --focus: #3fc79a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font-ui); }
+[hidden] { display: none !important; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3, h4 { margin: 0; line-height: 1.25; text-wrap: balance; }
+h2 { font-size: 1.25rem; font-weight: 600; }
+h3 { font-size: 1rem; font-weight: 600; }
+h4 { font-size: .85rem; font-weight: 600; margin-bottom: 6px; }
+.eyebrow { display: block; font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 2px; }
+.muted { color: var(--ink-2); font-weight: 400; }
+.lede { margin: 4px 0 0; color: var(--ink-2); max-width: 65ch; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* top bar */
+.topbar { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 12px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand h1 { font-size: 1.1rem; font-weight: 700; }
+.brand .sub { margin: 0; font-size: .82rem; color: var(--ink-2); }
+.brand-mark { width: 34px; height: 34px; flex: none; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.brand-mark rect:first-child { fill: var(--accent-soft); }
+.brand-mark rect:nth-child(2) { fill: var(--surface); }
+
+main.wrap { display: flex; flex-direction: column; gap: 20px; padding-block: 20px 8px; }
+.privacy { display: flex; gap: 10px; align-items: flex-start; margin: 0; font-size: .85rem; color: var(--ink-2); }
+.privacy svg { width: 18px; height: 18px; flex: none; fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; margin-top: 1px; }
+
+/* stepper */
+.stepper { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; counter-reset: s; }
+.stepper li { counter-increment: s; font-size: .8rem; font-weight: 500; color: var(--ink-2); padding: 8px 10px; border-top: 3px solid var(--line); }
+.stepper li::before { content: counter(s) " "; font-family: var(--font-num); margin-right: 4px; }
+.stepper li.done { border-color: var(--accent); color: var(--ink); }
+.stepper li.current { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+/* upload slots */
+.uploads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.slot { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.slot-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; min-height: 150px; padding: 18px; border: 1.5px dashed var(--line); border-radius: var(--r); background: var(--surface-2); cursor: pointer; color: var(--ink-2); font-size: .85rem; transition: border-color .15s, background .15s; }
+.drop svg { width: 28px; height: 28px; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.drop strong { color: var(--ink); font-size: .95rem; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px 16px; margin: 0; }
+.meta div { min-width: 0; }
+.meta dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); }
+.meta dd { margin: 0; font-size: .88rem; overflow-wrap: anywhere; }
+.meta dd[data-f="name"] { font-weight: 600; }
+.thumbs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.thumbs canvas { height: 120px; width: auto; border: 1px solid var(--line); border-radius: 4px; background: #fff; cursor: zoom-in; flex: none; }
+.slot-actions, .slot-foot { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* pills / status */
+.pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: .72rem; font-weight: 600; letter-spacing: .02em; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .8; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.info { background: var(--info-soft); color: var(--info); }
+.pill.busy { background: var(--accent-soft); color: var(--accent); }
+
+/* buttons */
+.btn { font: inherit; font-size: .9rem; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; transition: background .12s, border-color .12s; }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn.small { min-height: 34px; padding: 5px 11px; font-size: .82rem; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--bad); }
+.btn.danger:hover:not(:disabled) { border-color: var(--bad); }
+.btn.danger.solid { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* actions + status */
+.actions { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.action-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.status p { margin: 0; font-size: .88rem; color: var(--ink-2); }
+.status p.err { color: var(--bad); font-weight: 500; }
+.progress { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-bottom: 6px; }
+.progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+/* results */
+.results { display: flex; flex-direction: column; gap: 14px; }
+.section-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--line); }
+.summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; min-width: 92px; }
+.stat b { display: block; font-family: var(--font-num); font-size: 1.25rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.stat span { font-size: .72rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: .05em; }
+.stat.ok b { color: var(--ok); } .stat.bad b { color: var(--bad); } .stat.warn b { color: var(--warn); } .stat.info b { color: var(--info); }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: inherit; font-size: .8rem; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; min-height: 32px; }
+.chip.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+
+.table-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+table.cmp { width: 100%; border-collapse: collapse; font-size: .86rem; min-width: 860px; }
+.cmp th { text-align: left; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface-2); position: sticky; top: 0; }
+.cmp td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cmp tr.group td { background: var(--surface-2); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-2); padding: 6px 12px; }
+.cmp tr.row.MISMATCH td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+.cmp tr.row.REVIEW td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.cmp .c-ok { width: 74px; text-align: center; }
+.cmp td.c-ok { text-align: center; }
+.cmp td.c-ok input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+.cmp .field { font-weight: 600; }
+.cmp .note { display: block; margin-top: 4px; font-size: .78rem; color: var(--ink-2); font-weight: 400; max-width: 46ch; }
+.cmp .val { font-family: var(--font-num); font-size: .82rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; max-width: 32ch; }
+.cmp .val.text { font-family: var(--font-ui); font-size: .84rem; }
+.cmp .val.strike { text-decoration: line-through; text-decoration-color: var(--bad); color: var(--ink-2); }
+.cmp .proposed { width: 100%; min-width: 150px; font: 500 .84rem var(--font-num); padding: 6px 8px; resize: vertical; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.cmp .proposed:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.cmp tr.approved .proposed { border-color: var(--accent); background: var(--accent-soft); }
+.cmp .none { color: var(--ink-2); font-size: .8rem; }
+
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.grid2.wide-left { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.opt { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.opt input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); flex: none; }
+.opt strong { display: block; font-size: .9rem; font-weight: 600; }
+.opt small { display: block; color: var(--ink-2); font-size: .8rem; }
+.hint { margin: 0; font-size: .8rem; padding: 8px 10px; border-radius: 6px; background: var(--warn-soft); color: var(--warn); }
+
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.checks li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; font-size: .86rem; }
+.checks .ic { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: .72rem; font-weight: 700; }
+.checks .pass .ic { background: var(--ok-soft); color: var(--ok); }
+.checks .fail .ic { background: var(--bad-soft); color: var(--bad); }
+.checks .warn .ic { background: var(--warn-soft); color: var(--warn); }
+.checks .info .ic { background: var(--info-soft); color: var(--info); }
+.checks b { font-weight: 600; }
+.checks small { display: block; white-space: pre-line; color: var(--ink-2); font-family: var(--font-num); font-size: .76rem; overflow-wrap: anywhere; }
+
+.raw summary { cursor: pointer; font-weight: 600; }
+.raw pre { margin: 0; max-height: 320px; overflow: auto; background: var(--surface-2); border-radius: 6px; padding: 10px; font: .74rem/1.45 var(--font-num); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.downloads { display: flex; flex-wrap: wrap; gap: 8px; }
+.compare-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pagepick { font-size: .82rem; color: var(--ink-2); }
+.pagepick select { font: inherit; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.before-after { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.before-after figure { margin: 0; min-width: 0; }
+.before-after figcaption { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 4px; }
+.before-after canvas { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; background: #fff; display: block; cursor: zoom-in; }
+
+.foot { padding-block: 16px 28px; font-size: .78rem; color: var(--ink-2); }
+.foot p { margin: 0; max-width: 80ch; }
+
+/* modals */
+.modal { position: fixed; inset: 0; z-index: 50; background: rgba(10, 18, 15, .55); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.modal-card { background: var(--surface); color: var(--ink); border-radius: 10px; padding: 18px; width: min(440px, 100%); display: flex; flex-direction: column; gap: 12px; max-height: 100%; }
+.modal-card.wide { width: min(1000px, 100%); height: 100%; }
+.modal-card header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.modal-card p { margin: 0; color: var(--ink-2); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.pv-pages { overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; background: var(--surface-2); border-radius: 6px; padding: 12px; flex: 1; }
+.pv-pages canvas { max-width: 100%; height: auto; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .2); }
+
+@media (max-width: 860px) {
+  .uploads, .grid2, .grid2.wide-left { grid-template-columns: minmax(0, 1fr); }
+  .stepper { grid-template-columns: repeat(3, 1fr); }
+  .brand .sub { display: none; }
+}
+@media (max-width: 480px) {
+  .action-row .btn, .downloads .btn { flex: 1 1 100%; }
+  .before-after { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+.sub-opt { padding-left: 28px; cursor: default; }
+.sub-opt select { margin-top: 4px; max-width: 100%; font: inherit; font-size: .84rem; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="4" width="15" height="20" rx="2"/><rect x="14" y="8" width="15" height="20" rx="2"/><path d="M18 18l3 3 5-6"/></svg>
+      <div>
+        <h1>PO Invoice Verifier</h1>
+        <p class="sub">Cross-check a Purchase Order against a Tax Invoice and issue a corrected invoice</p>
+      </div>
+    </div>
+    <button class="btn ghost small" id="btnReset" type="button" disabled>Reset workspace</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="privacy" id="privacyNote">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2l6 2.5v5c0 4-2.7 7-6 8.5C6.7 16.5 4 13.5 4 9.5v-5z"/></svg>
+    <span>Your PDFs are processed only in this browser and are never uploaded. The PDF and OCR engines are downloaded from public CDNs (cdnjs, jsDelivr) the first time; scanned pages are read by OCR on this computer.</span>
+  </p>
+
+  <ol class="stepper" id="stepper" aria-label="Progress">
+    <li data-step="upload">Upload</li>
+    <li data-step="extract">Extract</li>
+    <li data-step="compare">Compare</li>
+    <li data-step="review">Review</li>
+    <li data-step="generate">Generate</li>
+    <li data-step="download">Download</li>
+  </ol>
+
+  <section class="uploads" aria-label="Documents">
+    <!-- slot template is filled twice by script.js -->
+    <article class="slot" id="slot-po" data-kind="po">
+      <header class="slot-head">
+        <div><span class="eyebrow">Source of truth</span><h2>Purchase Order</h2></div>
+        <span class="pill" data-role="state">Not uploaded</span>
+      </header>
+      <label class="drop" data-role="drop" for="file-po">
+        <input type="file" id="file-po" accept="application/pdf,.pdf" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M5 16v3h14v-3"/></svg>
+        <strong>Drop the PO PDF here</strong>
+        <span>or <u>choose a file</u> · PDF up to 25 MB · scanned copies are read with OCR</span>
+      </label>
+      <div class="loaded" data-role="loaded" hidden>
+        <dl class="meta">
+          <div><dt>File</dt><dd data-f="name"></dd></div>
+          <div><dt>Size</dt><dd data-f="size"></dd></div>
+          <div><dt>Pages</dt><dd data-f="pages"></dd></div>
+          <div><dt>Upload</dt><dd data-f="upload"></dd></div>
+          <div><dt>Extraction</dt><dd data-f="extract">Not started</dd></div>
+        </dl>
+        <div class="thumbs" data-role="thumbs"></div>
+        <div class="slot-actions">
+          <button class="btn small" type="button" data-act="preview">Preview PO</button>
+          <button class="btn small" type="button" data-act="replace">Replace / Re-upload PO</button>
+          <button class="btn small" type="button" data-act="remove">Remove PO</button>
+          <button class="btn small danger" type="button" data-act="delete">Delete PO</button>
+        </div>
+      </div>
+      <div class="slot-foot" data-role="emptyActions">
+        <button class="btn small primary" type="button" data-act="upload">Upload PO</button>
+      </div>
+    </article>
+
+    <article class="slot" id="slot-inv" data-kind="inv">
+      <header class="slot-head">
+        <div><span class="eyebrow">Document to correct</span><h2>Tax Invoice</h2></div>
+        <span class="pill" data-role="state">Not uploaded</span>
+      </header>
+      <label class="drop" data-role="drop" for="file-inv">
+        <input type="file" id="file-inv" accept="application/pdf,.pdf" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M5 16v3h14v-3"/></svg>
+        <strong>Drop the Tax Invoice PDF here</strong>
+        <span>or <u>choose a file</u> · PDF up to 25 MB · a text-based (system-generated) PDF gives the cleanest edits</span>
+      </label>
+      <div class="loaded" data-role="loaded" hidden>
+        <dl class="meta">
+          <div><dt>File</dt><dd data-f="name"></dd></div>
+          <div><dt>Size</dt><dd data-f="size"></dd></div>
+          <div><dt>Pages</dt><dd data-f="pages"></dd></div>
+          <div><dt>Upload</dt><dd data-f="upload"></dd></div>
+          <div><dt>Extraction</dt><dd data-f="extract">Not started</dd></div>
+        </dl>
+        <div class="thumbs" data-role="thumbs"></div>
+        <div class="slot-actions">
+          <button class="btn small" type="button" data-act="preview">Preview Tax Invoice</button>
+          <button class="btn small" type="button" data-act="replace">Replace / Re-upload Tax Invoice</button>
+          <button class="btn small" type="button" data-act="remove">Remove Tax Invoice</button>
+          <button class="btn small danger" type="button" data-act="delete">Delete Tax Invoice</button>
+        </div>
+      </div>
+      <div class="slot-foot" data-role="emptyActions">
+        <button class="btn small primary" type="button" data-act="upload">Upload Tax Invoice</button>
+      </div>
+    </article>
+  </section>
+
+  <section class="actions" aria-label="Workflow">
+    <div class="action-row">
+      <button class="btn primary" id="btnExtract" type="button" disabled>Extract Document Data</button>
+      <button class="btn primary" id="btnCompare" type="button" disabled>Compare PO and Tax Invoice</button>
+      <button class="btn" id="btnReview" type="button" disabled>Review Differences</button>
+      <button class="btn primary" id="btnGenerate" type="button" disabled>Generate Corrected Tax Invoice</button>
+      <button class="btn" id="btnReport" type="button" disabled>Download Discrepancy Report</button>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite">
+      <div class="progress" id="progress" hidden><span id="progressBar"></span></div>
+      <p id="statusText">Upload both PDFs to begin.</p>
+    </div>
+  </section>
+
+  <section id="results" class="results" hidden>
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Step 4</span>
+        <h2>Review differences</h2>
+        <p class="lede">The PO is treated as the source of truth. Tick a row to approve its correction; you can edit any proposed value before generating.</p>
+      </div>
+      <div class="summary" id="summary"></div>
+    </div>
+
+    <div class="filters" role="tablist" id="filters">
+      <button type="button" role="tab" class="chip on" data-filter="all">All</button>
+      <button type="button" role="tab" class="chip" data-filter="MISMATCH">Mismatches</button>
+      <button type="button" role="tab" class="chip" data-filter="REQUIRES MANUAL REVIEW">Needs review</button>
+      <button type="button" role="tab" class="chip" data-filter="missing">Missing</button>
+      <button type="button" role="tab" class="chip" data-filter="MATCH">Matches</button>
+    </div>
+
+    <div class="table-scroll">
+      <table class="cmp" id="cmpTable">
+        <thead><tr><th class="c-ok">Approve</th><th>Field</th><th>PO value</th><th>Original invoice value</th><th>Status</th><th>Proposed correction</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="grid2">
+      <section class="panel">
+        <h3>Output format</h3>
+        <label class="opt"><input type="checkbox" id="optBank" checked> <span><strong>Remove the bank details table</strong><small>Bank name, branch, SWIFT, account number, currency, rate and the table lines.</small></span></label>
+        <label class="opt"><input type="checkbox" id="optBox" checked> <span><strong>Add the green authorization box</strong><small>Invoiced by / Checked by / Authorized by, placed where the bank table was.</small></span></label>
+        <label class="opt sub-opt" for="optBoxPages"><span><small>Place the box on</small>
+          <select id="optBoxPages"><option value="first" selected>First page only (last page: bank details removed, no box)</option><option value="all">Every page that had bank details</option></select></span></label>
+        <label class="opt"><input type="checkbox" id="optOriginal" checked> <span><strong>Mark the copy as ORIGINAL</strong><small>Replaces “DUPLICATE” in the same place, Times New Roman, same size and right edge.</small></span></label>
+        <p class="hint" id="bankHint" hidden></p>
+      </section>
+      <section class="panel">
+        <h3>Financial validation <span class="muted">(with the approved corrections)</span></h3>
+        <ul class="checks" id="validation"></ul>
+      </section>
+    </div>
+
+    <details class="panel raw">
+      <summary>Show extracted text</summary>
+      <div class="grid2">
+        <div><h4>Purchase Order</h4><pre id="rawPo"></pre></div>
+        <div><h4>Tax Invoice</h4><pre id="rawInv"></pre></div>
+      </div>
+    </details>
+  </section>
+
+  <section id="output" class="results" hidden>
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Steps 5–6</span>
+        <h2>Corrected Tax Invoice</h2>
+        <p class="lede" id="outLede"></p>
+      </div>
+    </div>
+    <div class="downloads">
+      <button class="btn primary" type="button" id="dlPdf">Corrected Tax Invoice PDF</button>
+      <button class="btn" type="button" id="dlReportPdf">Discrepancy Report PDF</button>
+      <button class="btn" type="button" id="dlCsv">Discrepancy Report CSV</button>
+      <button class="btn" type="button" id="dlJson">Comparison Data JSON</button>
+    </div>
+    <div class="grid2 wide-left">
+      <section class="panel">
+        <div class="compare-head">
+          <h3>Before and after</h3>
+          <label class="pagepick">Page <select id="cmpPage"></select></label>
+        </div>
+        <div class="before-after">
+          <figure><figcaption>Original</figcaption><canvas id="cvBefore"></canvas></figure>
+          <figure><figcaption>Corrected</figcaption><canvas id="cvAfter"></canvas></figure>
+        </div>
+      </section>
+      <section class="panel">
+        <h3>Final verification</h3>
+        <ul class="checks" id="qa"></ul>
+      </section>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <p>Originals are never modified. Corrected files are created as new downloads. Removing a document or resetting clears it from this page’s memory.</p>
+</footer>
+
+<!-- preview modal -->
+<div class="modal" id="previewModal" hidden>
+  <div class="modal-card wide" role="dialog" aria-modal="true" aria-labelledby="pvTitle">
+    <header><h3 id="pvTitle">Preview</h3><button class="btn small" type="button" data-close>Close</button></header>
+    <div class="pv-pages" id="pvPages"></div>
+  </div>
+</div>
+<!-- confirm modal -->
+<div class="modal" id="confirmModal" hidden>
+  <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="cfTitle" aria-describedby="cfText">
+    <h3 id="cfTitle">Are you sure?</h3>
+    <p id="cfText"></p>
+    <div class="modal-actions"><button class="btn" type="button" id="cfNo">Cancel</button><button class="btn danger solid" type="button" id="cfYes">Confirm</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+/*
+ * PO ⇄ Tax Invoice verification engine.
+ * Pure logic, no DOM. Works in the browser (globals pdfjsLib + PDFLib) and in Node (for tests).
+ * Exposes window.POCore / globalThis.POCore.
+ */
+(function (root) {
+  'use strict';
+
+  /* ------------------------------------------------------------------ *
+   * 1. Decimal-safe money: BigInt scaled by 10^4
+   * ------------------------------------------------------------------ */
+  const SCALE = 10000n;
+
+  function parseDec(str) {
+    const s = String(str).replace(/,/g, '').trim();
+    const m = /^(-?)(\d*)(?:\.(\d+))?$/.exec(s);
+    if (!m || (m[2] === '' && !m[3])) return null;
+    const frac = (m[3] || '').padEnd(4, '0');
+    const fracUsed = frac.slice(0, 4);
+    let v = BigInt(m[2] || '0') * SCALE + BigInt(fracUsed || '0');
+    // round half-up on a 5th+ decimal (rare)
+    if (frac.length > 4 && Number(frac[4]) >= 5) v += 1n;
+    return m[1] ? -v : v;
+  }
+  function decimalsOf(raw) { const m = /\.(\d+)$/.exec(String(raw).replace(/,/g, '')); return m ? m[1].length : 0; }
+  function abs(v) { return v < 0n ? -v : v; }
+  /** multiply two scaled values exactly, result scaled; returns {value, exact} */
+  function mul(a, b) { const p = a * b; return { value: p / SCALE, rem: p % SCALE }; }
+  function roundTo(v, decimals, mode) { // v scaled 1e4
+    const unit = 10n ** BigInt(4 - decimals);
+    const q = v / unit, r = v % unit;
+    if (mode === 'truncate' || r === 0n) return q * unit;
+    // half-up (away from zero for positives)
+    return (r * 2n >= unit ? q + 1n : q) * unit;
+  }
+  function fmt(v, decimals = 2, comma = true) {
+    if (v === null || v === undefined) return '';
+    const neg = v < 0n; let x = abs(roundTo(abs(v), decimals, 'halfup'));
+    const intPart = x / SCALE; const frac = (x % SCALE).toString().padStart(4, '0').slice(0, decimals);
+    let s = intPart.toString();
+    if (comma) s = s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (neg ? '-' : '') + s + (decimals ? '.' + frac : '');
+  }
+  function toNumber(v) { return Number(v) / 10000; }
+
+  /* ------------------------------------------------------------------ *
+   * 2. Amount in words (international system)
+   * ------------------------------------------------------------------ */
+  const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+    'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  function words999(n, opt) {
+    const out = [];
+    const h = Math.floor(n / 100), r = n % 100;
+    if (h) out.push(ONES[h] + ' hundred');
+    if (r) {
+      if (h && opt.british) out.push('and');
+      if (r < 20) out.push(ONES[r]);
+      else out.push(TENS[Math.floor(r / 10)] + (r % 10 ? (opt.hyphen ? '-' : ' ') + ONES[r % 10] : ''));
+    }
+    return out.join(' ');
+  }
+  function intToWords(n, opt = {}) {
+    if (n === 0) return 'zero';
+    const scales = ['', 'thousand', 'million', 'billion', 'trillion'];
+    const parts = []; let i = 0;
+    while (n > 0) { const c = n % 1000; if (c) parts.unshift(words999(c, opt) + (scales[i] ? ' ' + scales[i] : '')); n = Math.floor(n / 1000); i++; }
+    return parts.join(' ');
+  }
+  function applyCase(s, style) {
+    if (style === 'upper') return s.toUpperCase();
+    if (style === 'title') return s.replace(/\b[a-z]/g, c => c.toUpperCase());
+    if (style === 'sentence') return s.charAt(0).toUpperCase() + s.slice(1);
+    return s;
+  }
+  function detectCase(s) {
+    const letters = s.replace(/[^A-Za-z]/g, '');
+    if (letters && letters === letters.toUpperCase()) return 'upper';
+    const ws = s.split(/\s+/).filter(w => /^[A-Za-z]/.test(w) && !/^(and)$/i.test(w));
+    if (ws.length > 1 && ws.every(w => /^[A-Z]/.test(w))) return 'title';
+    if (/^[A-Z]/.test(s.trim())) return 'sentence';
+    return 'lower';
+  }
+  /**
+   * Re-express `total` in the same wording style as `original`.
+   * Returns {text, confident, reason}.
+   */
+  function amountInWords(total, original) {
+    const intPart = Number(total / SCALE); const cents = Number(roundTo(total, 2, 'halfup') % SCALE / 100n);
+    const orig = (original || '').trim();
+    const opt = { hyphen: /[a-z]-[a-z]/i.test(orig), british: /hundred and/i.test(orig) };
+    let m = /^(.*?)(\s+and\s+)(\d{1,2})\s*\/\s*100\b(.*)$/i.exec(orig);
+    if (m) {
+      const prefixMatch = /^((?:rupees|rs\.?|lkr|usd|us dollars|dollars)\s+)/i.exec(m[1]);
+      const prefix = prefixMatch ? prefixMatch[1] : '';
+      const style = detectCase(m[1].slice(prefix.length));
+      const w = applyCase(intToWords(intPart, opt), style);
+      return { text: prefix + w + m[2] + String(cents).padStart(2, '0') + '/100' + m[4], confident: true };
+    }
+    m = /^((?:rupees|rs\.?|lkr)\s+)?(.*?)(\s+and\s+(?:cents?)\s+(.*?))?(\s+only\.?)$/i.exec(orig);
+    if (m) {
+      const style = detectCase(m[2]);
+      let t = (m[1] || '') + applyCase(intToWords(intPart, opt), style);
+      if (cents) t += ' and ' + applyCase('cents ' + intToWords(cents, opt), style === 'sentence' ? 'lower' : style);
+      return { text: t + m[5], confident: true };
+    }
+    const t = applyCase(intToWords(intPart, opt), 'sentence') + ' and ' + String(cents).padStart(2, '0') + '/100';
+    return { text: t, confident: false, reason: 'The original wording pattern was not recognised, so the proposed text uses a generic pattern. Edit it before approving.' };
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 3. PDF content-stream tokenizer + interpreter
+   * ------------------------------------------------------------------ */
+  const WS = new Set([0, 9, 10, 12, 13, 32]);
+  const DELIM = new Set('()<>[]{}/%'.split('').map(c => c.charCodeAt(0)));
+
+  function tokenize(s) {
+    const toks = []; let i = 0; const n = s.length;
+    while (i < n) {
+      const c = s.charCodeAt(i);
+      if (WS.has(c)) { i++; continue; }
+      if (c === 37) { while (i < n && s[i] !== '\n' && s[i] !== '\r') i++; continue; } // %
+      const st = i;
+      if (c === 40) { // ( string
+        let depth = 1; i++;
+        while (i < n && depth) { const ch = s[i]; if (ch === '\\') { i += 2; continue; } if (ch === '(') depth++; else if (ch === ')') depth--; i++; }
+        toks.push({ t: 'str', s: st, e: i }); continue;
+      }
+      if (c === 60) { // <
+        if (s[i + 1] === '<') { toks.push({ t: 'dS', s: st, e: i + 2 }); i += 2; continue; }
+        const j = s.indexOf('>', i); i = j < 0 ? n : j + 1; toks.push({ t: 'str', s: st, e: i }); continue;
+      }
+      if (c === 62 && s[i + 1] === '>') { toks.push({ t: 'dE', s: st, e: i + 2 }); i += 2; continue; }
+      if (c === 91) { toks.push({ t: 'aS', s: st, e: ++i }); continue; }
+      if (c === 93) { toks.push({ t: 'aE', s: st, e: ++i }); continue; }
+      if (c === 123 || c === 125) { i++; continue; }
+      if (c === 47) { // name
+        i++; while (i < n && !WS.has(s.charCodeAt(i)) && !DELIM.has(s.charCodeAt(i))) i++;
+        toks.push({ t: 'name', v: s.slice(st + 1, i), s: st, e: i }); continue;
+      }
+      while (i < n && !WS.has(s.charCodeAt(i)) && !DELIM.has(s.charCodeAt(i))) i++;
+      if (i === st) { i++; continue; }
+      const w = s.slice(st, i);
+      if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(w)) { toks.push({ t: 'num', v: parseFloat(w), s: st, e: i }); continue; }
+      if (w === 'true' || w === 'false' || w === 'null') { toks.push({ t: 'kw', v: w, s: st, e: i }); continue; }
+      toks.push({ t: 'op', v: w, s: st, e: i });
+      if (w === 'ID') { // inline image binary data
+        const re = /\sEI(?=[\s]|$)/g; re.lastIndex = i + 1; const m = re.exec(s);
+        const end = m ? m.index + m[0].length : n; toks.push({ t: 'op', v: 'EI', s: i, e: end }); i = end;
+      }
+    }
+    return toks;
+  }
+
+  function parseOps(s) {
+    const toks = tokenize(s); const ops = []; let args = [];
+    let depth = 0;
+    for (const t of toks) {
+      if (t.t === 'aS' || t.t === 'dS') depth++;
+      if (t.t === 'aE' || t.t === 'dE') depth--;
+      if (t.t === 'op' && depth <= 0) {
+        ops.push({ op: t.v, args, s: args.length ? args[0].s : t.s, e: t.e }); args = []; depth = 0;
+      } else args.push(t);
+    }
+    return ops;
+  }
+
+  const I = [1, 0, 0, 1, 0, 0];
+  function mmul(a, b) { // a × b  (PDF row-vector convention)
+    return [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3], a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3],
+      a[4] * b[0] + a[5] * b[2] + b[4], a[4] * b[1] + a[5] * b[3] + b[5]];
+  }
+  function apply(m, x, y) { return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]; }
+  const nums = a => a.filter(t => t.t === 'num').map(t => t.v);
+
+  /** Walk the operators and record text runs (with origin) and painted paths (with bbox). */
+  function interpret(ops) {
+    let ctm = I.slice(), tm = I.slice(), tlm = I.slice(), TL = 0, font = null, size = 1, fill = { space: 'g', v: [0] };
+    const stack = []; const runs = []; const paths = []; let run = null; let xobjects = 0;
+    let path = null;
+    const newPathPt = (i, x, y) => { if (!path) path = { start: i, minx: 1e9, miny: 1e9, maxx: -1e9, maxy: -1e9, clip: false }; const [X, Y] = apply(ctm, x, y); path.minx = Math.min(path.minx, X); path.maxx = Math.max(path.maxx, X); path.miny = Math.min(path.miny, Y); path.maxy = Math.max(path.maxy, Y); };
+    const td = (tx, ty) => { tlm = mmul([1, 0, 0, 1, tx, ty], tlm); tm = tlm.slice(); run = null; };
+    ops.forEach((o, i) => {
+      const a = nums(o.args);
+      switch (o.op) {
+        case 'q': stack.push({ ctm: ctm.slice(), font, size, TL, fill }); break;
+        case 'Q': { const s = stack.pop(); if (s) ({ ctm, font, size, TL, fill } = s); break; }
+        case 'cm': if (a.length === 6) ctm = mmul(a, ctm); break;
+        case 'BT': tm = I.slice(); tlm = I.slice(); run = null; break;
+        case 'ET': run = null; break;
+        case 'Tf': { const nm = o.args.find(t => t.t === 'name'); font = nm ? nm.v : font; if (a.length) size = a[a.length - 1]; break; }
+        case 'TL': TL = a[0] || 0; break;
+        case 'Td': td(a[0] || 0, a[1] || 0); break;
+        case 'TD': TL = -(a[1] || 0); td(a[0] || 0, a[1] || 0); break;
+        case 'Tm': if (a.length === 6) { tm = a.slice(); tlm = a.slice(); run = null; } break;
+        case 'T*': td(0, -TL); break;
+        case "'": case '"': td(0, -TL); /* fallthrough */
+        case 'Tj': case 'TJ': {
+          if (!run) {
+            const m = mmul(tm, ctm);
+            run = { ops: [], x: m[4], y: m[5], font, size: size * Math.hypot(m[2], m[3]), fill };
+            runs.push(run);
+          }
+          run.ops.push(i); break;
+        }
+        case 'g': fill = { space: 'g', v: a }; break;
+        case 'rg': fill = { space: 'rg', v: a }; break;
+        case 'k': fill = { space: 'k', v: a }; break;
+        case 'm': case 'l': newPathPt(i, a[0], a[1]); break;
+        case 'c': newPathPt(i, a[0], a[1]); newPathPt(i, a[2], a[3]); newPathPt(i, a[4], a[5]); break;
+        case 'v': case 'y': newPathPt(i, a[0], a[1]); newPathPt(i, a[2], a[3]); break;
+        case 're': newPathPt(i, a[0], a[1]); newPathPt(i, a[0] + a[2], a[1] + a[3]); newPathPt(i, a[0], a[1] + a[3]); newPathPt(i, a[0] + a[2], a[1]); break;
+        case 'h': break;
+        case 'W': case 'W*': if (path) path.clip = true; break;
+        case 'S': case 's': case 'f': case 'F': case 'f*': case 'B': case 'B*': case 'b': case 'b*': case 'n':
+          if (path) { paths.push({ start: path.start, end: i, x0: path.minx, y0: path.miny, x1: path.maxx, y1: path.maxy, clip: path.clip, paint: o.op }); }
+          path = null; break;
+        case 'Do': xobjects++; break;
+      }
+    });
+    return { runs, paths, xobjects };
+  }
+
+  function rewrite(src, ops, removeIdx) {
+    if (!removeIdx.size) return src;
+    let out = ''; let last = 0;
+    [...removeIdx].sort((a, b) => a - b).forEach(i => { const o = ops[i]; out += src.slice(last, o.s) + ' '; last = o.e; });
+    return out + src.slice(last);
+  }
+
+  const latin1ToBytes = s => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 255; return b; };
+  const bytesToLatin1 = b => { let s = ''; const CH = 0x8000; for (let i = 0; i < b.length; i += CH) s += String.fromCharCode.apply(null, b.subarray(i, i + CH)); return s; };
+
+  /* ------------------------------------------------------------------ *
+   * 4. Text extraction (text layer, with OCR fallback for scanned pages)
+   * ------------------------------------------------------------------ */
+  const NUM_RE = /(?<![\w.,\/-])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\w\/%-]|[.,]\d)/g;
+
+  async function extractDocument(pdfjsLib, bytes, opts = {}) {
+    const log = opts.log || (() => {});
+    const doc = await pdfjsLib.getDocument(Object.assign({ data: bytes.slice(0), isEvalSupported: false }, root.POCore && root.POCore.pdfjsOptions || {})).promise;
+    const pages = []; let ocrPages = 0;
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const vp = page.getViewport({ scale: 1 });
+      const [vx0, vy0, vx1, vy1] = page.view;
+      const tc = await page.getTextContent();
+      let items = tc.items.filter(it => it.str && it.str.trim()).map((it, k) => {
+        const t = it.transform; const size = Math.hypot(t[2], t[3]) || it.height || 10;
+        return { id: `${p}:${k}`, page: p, str: it.str, x: t[4], y: t[5], w: it.width, h: size, size, src: 'text' };
+      });
+      const chars = items.reduce((s, it) => s + it.str.trim().length, 0);
+      let ocr = null;
+      if (chars < 25) {
+        if (!opts.ocr) { pages.push({ n: p, width: vx1 - vx0, height: vy1 - vy0, view: page.view, items: [], lines: [], scanned: true, ocrFailed: true }); continue; }
+        log(`Page ${p} has no text layer. Running OCR…`);
+        ocr = await opts.ocr(page, p, doc.numPages);
+        ocrPages++;
+        items = ocr.words.map((w, k) => ({ id: `${p}:o${k}`, page: p, str: w.text, x: w.x0, y: w.y0, w: w.x1 - w.x0, h: (w.y1 - w.y0) || 8, size: (w.y1 - w.y0) * 1.25, conf: w.conf, line: w.line, pass: w.pass, src: 'ocr' }));
+      }
+      const lines = groupLines(items, ocr ? 'ocr' : 'text');
+      pages.push({ n: p, width: vx1 - vx0, height: vy1 - vy0, view: page.view, items, lines, scanned: !!ocr, rotate: page.rotate || 0, vw: vp.width, vh: vp.height });
+    }
+    return { numPages: doc.numPages, pages, ocrPages, doc };
+  }
+
+  function groupLines(items, mode) {
+    const lines = [];
+    if (mode === 'ocr') { // OCR already gives lines (possibly from two passes)
+      const by = new Map();
+      items.forEach(it => { const k = it.pass + ':' + it.line; if (!by.has(k)) by.set(k, []); by.get(k).push(it); });
+      by.forEach((its, k) => { its.sort((a, b) => a.x - b.x); lines.push(mkLine(its, k.split(':')[0])); });
+      lines.sort((a, b) => (a.pass === b.pass ? b.y - a.y : (a.pass < b.pass ? -1 : 1)));
+      return lines;
+    }
+    const sorted = items.slice().sort((a, b) => b.y - a.y || a.x - b.x);
+    for (const it of sorted) {
+      let ln = lines.find(l => Math.abs(l.y - it.y) <= Math.max(1.5, 0.35 * Math.min(l.h, it.h)));
+      if (!ln) { ln = { y: it.y, h: it.h, items: [] }; lines.push(ln); }
+      ln.items.push(it);
+    }
+    return lines.map(l => { l.items.sort((a, b) => a.x - b.x); return mkLine(l.items, 'text'); }).sort((a, b) => b.y - a.y);
+  }
+  function mkLine(its, pass) {
+    const text = its.map(i => i.str.trim()).join(' ').replace(/\s+/g, ' ');
+    const tokens = [];
+    its.forEach(it => {
+      NUM_RE.lastIndex = 0; let m;
+      while ((m = NUM_RE.exec(it.str))) {
+        const raw = m[1]; const v = parseDec(raw); if (v === null) continue;
+        const frac = it.str.length ? m.index / it.str.length : 0;
+        tokens.push({ raw, v, dec: decimalsOf(raw), item: it, at: m.index, x: it.x + frac * it.w, money: /[.,]/.test(raw) });
+      }
+    });
+    return { text, lower: text.toLowerCase(), items: its, tokens, y: its[0] ? its[0].y : 0, h: Math.max(...its.map(i => i.h)), page: its[0] ? its[0].page : 0, pass };
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 5. Field identification
+   * ------------------------------------------------------------------ */
+  const LABELS = {
+    total: /(total amount including|including vat|incl\.?\s*(of\s*)?vat|\bwith\s+(\d+(\.\d+)?\s*%\s*)?vat\b|grand total|invoice total|total payable|gross total|amount due|total inclusive)/i,
+    vat: /^(?:[a-z]\)\s*)?(?:total\s+)?(?:vat|value added tax|tax amount|output tax)\b/i,
+    subtotal: /(total value of supply|sub\s*-?\s*total|\bwithout\b.*vat|excl(uding|\.)?\s*(of\s*)?vat|taxable (value|amount)|net (amount|value|total)|total before tax)/i,
+  };
+  const FIELD_LABELS = [
+    ['invoiceNo', /^(tax\s+)?invoice\s*(no|number|#)\.?$|^inv\.?\s*no\.?$/i],
+    ['invoiceDate', /^(date of invoice|invoice date)$/i],
+    ['poNo', /^(po|p\.o\.?|purchase order|lpo)\s*(no|number|#|ref)\.?$|^order ref(erence)?$/i],
+    ['orderNo', /^(order|sales order)\s*(no|number)\.?$/i],
+    ['deliveryDate', /^(date of delivery|delivery date)$/i],
+    ['placeOfSupply', /^place of supply$/i],
+    ['purchaserTin', /^(purchaser'?s?|buyer'?s?|customer'?s?)\s*(tin|vat\s*(reg)?\s*no)$/i],
+    ['supplierTin', /^supplier'?s?\s*tin$/i],
+    ['purchaserName', /^(purchaser'?s?|buyer'?s?|customer)\s*name$/i],
+    ['supplierName', /^supplier'?s?\s*name$/i],
+    ['words', /^(total\s+)?amount\s+in\s+words$/i],
+    ['payment', /^(mode of payment|payment (terms|method|mode))$/i],
+    ['refNote', /^reference note$/i],
+    ['telephone', /^tel(ephone)?\s*(no)?$/i],
+    ['address', /^address$/i],
+    ['currency', /^currency$/i],
+  ];
+  const isLabelText = s => { const t = s.replace(/[:\s]+$/, '').trim(); return FIELD_LABELS.some(([, re]) => re.test(t)); };
+
+  function keyValues(ext) {
+    const out = {};
+    ext.pages.forEach(pg => pg.lines.forEach(ln => {
+      ln.items.forEach((it, idx) => {
+        const raw = it.str.trim();
+        // label inside the same item: "Mode of Payment: CASH/…"
+        const inl = /^([^:]{3,40}):\s*(.+)$/.exec(raw);
+        for (const [key, re] of FIELD_LABELS) {
+          if (out[key]) continue;
+          const lab = raw.replace(/[:\s]+$/, '').trim();
+          if (re.test(lab)) {
+            const vals = [];
+            for (let j = idx + 1; j < ln.items.length; j++) {
+              const s = ln.items[j].str.trim();
+              if (/^:+$/.test(s)) continue;
+              if (isLabelText(s) || /:$/.test(s)) break;
+              vals.push(ln.items[j]);
+            }
+            if (vals.length) {
+              const v0 = vals[0];
+              const col = pg.items.filter(o => Math.abs(o.x - v0.x) < 2 && Math.abs(o.y - it.y) < it.h * 2.6 && !isLabelText(o.str)).sort((a, b) => b.y - a.y);
+              const full = (col.length > 1 ? col : vals).map(v => v.str.trim()).join(' ').replace(/^:\s*/, '').replace(/,\s*,/g, ',');
+              out[key] = { text: vals.map(v => v.str.trim()).join(' ').replace(/^:\s*/, ''), full, items: vals, labelItem: it };
+            }
+            else out[key] = { text: '', items: [], labelItem: it };
+          } else if (inl && re.test(inl[1].trim())) {
+            out[key] = { text: inl[2].trim(), items: [it], labelItem: it, inline: true, prefix: raw.slice(0, raw.length - inl[2].length) };
+          }
+        }
+      });
+    }));
+    return out;
+  }
+
+  function findLineItems(ext) {
+    const items = [];
+    ext.pages.forEach(pg => pg.lines.forEach((ln, li) => {
+      if (LABELS.total.test(ln.lower) || LABELS.vat.test(ln.lower) || /^\s*(total|sub\s*total)\b/i.test(ln.text)) return;
+      const t = ln.tokens; let best = null;
+      for (let k = t.length - 1; k >= 2; k--) for (let j = k - 1; j >= 1; j--) for (let i = j - 1; i >= 0; i--) {
+        const q = t[i], p = t[j], a = t[k];
+        if (q.v <= 0n || p.v <= 0n || a.v < p.v || q.v > 10000000n * SCALE) continue;
+        if (q.money && q.dec === 2 && p.dec === 2 && a.dec === 2 && q.v > 100000n * SCALE) continue;
+        if (!a.money && !p.money) continue; // amounts must look like money (decimals or thousands separators)
+        const prod = mul(q.v, p.v).value; const diff = abs(prod - a.v);
+        let quality = null, discount = null;
+        if (diff <= 100n) quality = 'exact';              // ≤ 0.01
+        else if (diff * 100n <= a.v) quality = 'approx';   // within 1 %
+        else {
+          for (let d = j + 1; d < k; d++) if (abs(prod - t[d].v - a.v) <= 100n) { quality = 'exact'; discount = t[d]; break; }
+        }
+        if (!quality) continue;
+        const score = (quality === 'exact' ? 10 : 4) + (p.dec === 2 ? 2 : 0) + (a.dec === 2 ? 2 : 0) + (q.dec === 0 ? 1 : 0) + k * 0.01;
+        if (!best || score > best.score) best = { q, p, a, quality, discount, score };
+      }
+      if (!best) return;
+      // description: line text without numbers, plus up to 2 following text-only lines
+      const used = new Set([best.q, best.p, best.a, best.discount].filter(Boolean));
+      let desc = ln.items.map(it => it.str.trim()).join(' ');
+      used.forEach(tk => { desc = desc.replace(tk.raw, ' '); });
+      desc = desc.replace(/^\s*\d{1,3}\s*[|.)]?\s+/, '').replace(/[|]/g, ' ').replace(/\s+/g, ' ').trim();
+      const extra = [];
+      for (let n = li + 1; n < Math.min(pg.lines.length, li + 3); n++) {
+        const nl = pg.lines[n];
+        if (nl.pass !== ln.pass) break;
+        if (nl.tokens.some(tk => tk.money) || LABELS.total.test(nl.lower) || LABELS.subtotal.test(nl.lower) || LABELS.vat.test(nl.lower) || /total/i.test(nl.text)) break;
+        if (Math.abs(nl.y - ln.y) > ln.h * 4) break;
+        extra.push(nl.text);
+      }
+      const code = (desc.match(/\b(?=[A-Z0-9\-\/.]*\d)(?=[A-Z0-9\-\/.]*[A-Z])[A-Z0-9][A-Z0-9\-\/.]{2,}\b/) || [])[0] || '';
+      items.push({ page: pg.n, line: ln, qty: best.q, price: best.p, amount: best.a, discount: best.discount, quality: best.quality, desc: [desc, ...extra].join(' ').trim(), code, pass: ln.pass });
+    }));
+    // OCR runs two passes over the same page; keep one copy of the same row
+    const seen = new Set();
+    return items.filter(it => { const k = `${it.page}|${it.qty.v}|${it.price.v}|${it.amount.v}`; if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+
+  function findTotals(ext) {
+    const cands = { subtotal: [], vat: [], total: [] }; const rates = [];
+    ext.pages.forEach(pg => pg.lines.forEach(ln => {
+      const L = ln.lower;
+      const money = ln.tokens.filter(t => t.money);
+      const rm = /(\d{1,2}(?:\.\d+)?)\s*%/.exec(ln.text);
+      if (rm && /vat|tax/i.test(L)) rates.push({ rate: parseDec(rm[1]), line: ln });
+      if (!money.length) return;
+      const val = money[money.length - 1];
+      let kind = null;
+      if (LABELS.total.test(L)) kind = 'total';
+      else if (LABELS.vat.test(L.replace(/^[^a-z]*/, ''))) kind = 'vat';
+      else if (LABELS.subtotal.test(L)) kind = 'subtotal';
+      else if (/^\s*total\b/i.test(ln.text) && !/total unit cost|qty|quantity/i.test(L)) kind = 'total?';
+      if (!kind) return;
+      const rec = { token: val, line: ln, label: ln.text, pass: ln.pass };
+      if (kind === 'total?') cands.total.push({ ...rec, weak: true }); else cands[kind].push(rec);
+    }));
+    return { cands, rates };
+  }
+
+  /** Reconcile candidates so that subtotal + VAT = total and lines sum to subtotal. */
+  function resolveTotals(ext, lineItems) {
+    const { cands, rates } = findTotals(ext);
+    const notes = [];
+    const lineSum = lineItems.length ? lineItems.reduce((s, it) => s + it.amount.v, 0n) : null;
+    const rate = rates.length ? rates[0].rate : null;
+    const uniq = arr => { const m = new Map(); arr.forEach(c => { if (!m.has(c.token.v)) m.set(c.token.v, c); else m.get(c.token.v).also = (m.get(c.token.v).also || 0) + 1; }); return [...m.values()]; };
+    const S = uniq(cands.subtotal), V = uniq(cands.vat), T = uniq(cands.total.filter(c => !c.weak)).concat(uniq(cands.total.filter(c => c.weak)));
+    let sub = null, vat = null, tot = null, derived = {};
+    // best triple
+    let best = null;
+    for (const s of [null, ...S]) for (const v of [null, ...V]) for (const t of [null, ...T]) {
+      let sc = 0;
+      const sv = s ? s.token.v : lineSum, vv = v ? v.token.v : null, tv = t ? t.token.v : null;
+      if (sv !== null && lineSum !== null && sv === lineSum) sc += 4;
+      if (sv !== null && vv !== null && tv !== null && abs(sv + vv - tv) <= 100n) sc += 6;
+      if (sv !== null && vv !== null && rate !== null && abs(mul(sv, rate).value / 100n - vv) <= 200n) sc += 3;
+      if (s) sc += 1; if (v) sc += 1; if (t) sc += t.weak ? 0.5 : 1;
+      if (s && t && s.token.v === t.token.v) sc -= 5;
+      if (!best || sc > best.sc) best = { sc, s, v, t };
+    }
+    if (best) {
+      sub = best.s; vat = best.v; tot = best.t;
+      // subtotal candidates whose value equals the total -> mislabeled
+      S.forEach(c => { if (tot && c !== sub && c.token.v === tot.token.v) notes.push(`The source line “${c.label}” is labelled as an amount without VAT, but its value equals the VAT-inclusive total. It was treated as a labelling error.`); });
+    }
+    const out = { subtotal: sub ? { v: sub.token.v, token: sub.token, label: sub.label } : null, vat: vat ? { v: vat.token.v, token: vat.token, label: vat.label } : null, total: tot ? { v: tot.token.v, token: tot.token, label: tot.label } : null, rate, lineSum, notes };
+    if (!out.subtotal && lineSum !== null) { out.subtotal = { v: lineSum, derived: 'sum of line amounts' }; }
+    if (!out.vat && out.subtotal && out.total) { out.vat = { v: out.total.v - out.subtotal.v, derived: 'total minus subtotal' }; }
+    if (!out.total && out.subtotal && out.vat && !out.vat.derived) { out.total = { v: out.subtotal.v + out.vat.v, derived: 'subtotal plus VAT' }; }
+    // conflicting duplicates (e.g. two OCR passes reading different values)
+    ['subtotal', 'vat', 'total'].forEach(k => {
+      const list = k === 'subtotal' ? S : k === 'vat' ? V : T.filter(c => !c.weak);
+      if (out[k] && !out[k].derived && list.length > 1) {
+        const others = list.filter(c => c.token.v !== out[k].v && !(k === 'subtotal' && tot && c.token.v === tot.token.v));
+        if (others.length) out[k].conflict = others.map(c => c.token.raw);
+      }
+    });
+    return out;
+  }
+
+  function vatCheck(sub, rate, vat) {
+    if (sub == null || rate == null || vat == null) return null;
+    const raw = mul(sub, rate).value / 100n; // scaled
+    const half = roundTo(raw, 2, 'halfup'), trunc = roundTo(raw, 2, 'truncate');
+    return { raw, half, trunc, matches: vat === half && vat === trunc ? 'both' : vat === half ? 'halfup' : vat === trunc ? 'truncate' : null };
+  }
+
+  function normRef(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+  function levenshtein(a, b) {
+    const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, i) => i);
+    for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
+    return prev[n];
+  }
+  /** best fuzzy occurrence of `needle` in a list of lines */
+  function fuzzyFind(needle, lines) {
+    const N = normRef(needle); if (N.length < 4) return null;
+    let best = null;
+    lines.forEach(ln => {
+      const H = normRef(ln.text);
+      if (H.includes(N)) { if (!best || best.sim < 1) best = { sim: 1, text: ln.text, line: ln }; return; }
+      for (let w = Math.max(4, N.length - 4); w <= N.length + 4; w++) for (let i = 0; i + w <= H.length; i++) {
+        const seg = H.slice(i, i + w); const d = levenshtein(N, seg); const sim = 1 - d / Math.max(N.length, w);
+        if (!best || sim > best.sim) best = { sim, text: ln.text, seg, line: ln };
+      }
+    });
+    return best;
+  }
+  function tokenSet(s) { return new Set(String(s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !/^\d+$/.test(w))); }
+  function jaccard(a, b) { const A = tokenSet(a), B = tokenSet(b); if (!A.size || !B.size) return 0; let n = 0; A.forEach(x => { if (B.has(x)) n++; }); return n / (A.size + B.size - n); }
+
+  /* ------------------------------------------------------------------ *
+   * 6. Comparison
+   * ------------------------------------------------------------------ */
+  const ST = { MATCH: 'MATCH', MISMATCH: 'MISMATCH', NOPO: 'NOT FOUND IN PO', NOINV: 'NOT FOUND IN TAX INVOICE', REVIEW: 'REQUIRES MANUAL REVIEW' };
+
+  function analyse(ext) {
+    const lineItems = findLineItems(ext);
+    const totals = resolveTotals(ext, lineItems);
+    const kv = keyValues(ext);
+    const allLines = ext.pages.flatMap(p => p.lines);
+    const allText = allLines.map(l => l.text).join('\n');
+    const currency = /\bLKR\b/i.test(allText) ? 'LKR' : /\b(Rs\.?|Rupees)\b/i.test(allText) ? 'LKR' : /\bUSD\b|US\$/.test(allText) ? 'USD' : /\bEUR\b|€/.test(allText) ? 'EUR' : null;
+    const refsRaw = [...new Set((allText.match(/\b[A-Z]{2,}(?:\s?\/\s?[A-Z0-9]+){2,}\b/g) || []).map(s => s.replace(/\s/g, '')))];
+    const refs = [];
+    refsRaw.sort((a, b) => b.length - a.length).forEach(r => { const R = normRef(r); if (!refs.some(x => { const X = normRef(x); return X.includes(R) || 1 - levenshtein(X, R) / Math.max(X.length, R.length) > 0.75; })) refs.push(r); });
+    const tin = /\bTIN\s*(?:No\.?)?\s*[:\-–]*\s*[:\-–]?\s*([0-9][0-9\- ]{6,}[0-9])/i.exec(allText);
+    const deliv = /(?:on or before|deliver(?:y|ed)?\s+(?:by|on|before))[^\n]{0,60}/i.exec(allText);
+    const delivDate = deliv ? /(\d{1,2})\s*[\/.\-]\s*(\d{1,2})\s*[\/.\-]\s*(\d{4})/.exec(deliv[0]) : null;
+    const qtyStmt = /\bquantity\s*[:\-–]*\s*(\d+(?:\.\d+)?)\s*(nos?|units?|pcs|pieces|each)?\b/i.exec(allText);
+    return { lineItems, totals, kv, allLines, allText, currency, refs, tin: tin ? tin[1].replace(/\s/g, '') : null, deliveryPhrase: deliv ? deliv[0].trim() : null, deliveryDate: delivDate ? delivDate[0].replace(/\s/g, '') : null, qtyStatement: qtyStmt ? parseDec(qtyStmt[1]) : null };
+  }
+
+  function editFor(token, page) { return token && token.item && token.item.src === 'text' ? { page: token.item.page, item: token.item, oldRaw: token.raw } : null; }
+
+  function compare(poExt, invExt) {
+    const po = analyse(poExt), inv = analyse(invExt);
+    const rows = []; let id = 0;
+    const add = r => { r.id = 'r' + (++id); r.approved = r.approved ?? (r.status === ST.MISMATCH && !!r.edit); rows.push(r); return r; };
+    const ocrNote = poExt.ocrPages ? 'PO values were read with OCR. Check them against the scan.' : '';
+
+    // --- references --------------------------------------------------
+    const invPo = inv.kv.poNo;
+    if (invPo && invPo.text) {
+      const f = fuzzyFind(invPo.text, po.allLines);
+      if (f && f.sim === 1) add({ group: 'Reference', field: 'PO number', po: invPo.text, inv: invPo.text, status: ST.MATCH, note: 'Found in the PO text.' });
+      else if (f && f.sim >= 0.6) add({ group: 'Reference', field: 'PO number', po: `Partly legible: “${f.text.slice(0, 60)}”`, inv: invPo.text, status: ST.REVIEW, note: `The PO reference could not be read with certainty (${Math.round(f.sim * 100)}% similar). Check the scan by eye. No change proposed.` });
+      else add({ group: 'Reference', field: 'PO number', po: '', inv: invPo.text, status: ST.NOPO, note: 'The invoice PO number was not found in the PO.' });
+    } else if (po.refs.length) add({ group: 'Reference', field: 'PO number', po: po.refs[0], inv: '', status: ST.NOINV, note: 'No PO number label found on the invoice.' });
+    const invText = normRef(inv.allText);
+    po.refs.forEach(r => {
+      if (invPo && fuzzyFind(invPo.text, [{ text: r }])?.sim >= 0.6) return;
+      if (!invText.includes(normRef(r))) add({ group: 'Reference', field: 'Other PO reference', po: r, inv: '', status: ST.NOINV, note: 'Reference appears in the PO only. Information only, nothing is added to the invoice.' });
+    });
+    if (inv.kv.orderNo && inv.kv.orderNo.text) {
+      const found = invText && normRef(po.allText).includes(normRef(inv.kv.orderNo.text));
+      add({ group: 'Reference', field: 'Order number', po: found ? inv.kv.orderNo.text : '', inv: inv.kv.orderNo.text, status: found ? ST.MATCH : ST.NOPO, note: found ? '' : 'Invoice-specific (internal order). No action.' });
+    }
+
+    // --- line items ---------------------------------------------------
+    const pairs = []; const usedPo = new Set();
+    inv.lineItems.forEach(ii => {
+      let best = null;
+      po.lineItems.forEach((pi, k) => {
+        if (usedPo.has(k)) return;
+        let sc = 0; const why = [];
+        if (pi.qty.v === ii.qty.v) { sc += 3; why.push('same quantity'); }
+        const pd = abs(pi.price.v - ii.price.v); if (pd * 100n <= ii.price.v) { sc += 3; why.push('unit price within 1%'); }
+        if (ii.code && normRef(pi.line.text + ' ' + pi.desc).includes(normRef(ii.code.split(/[-\/]/)[0]))) { sc += 1; why.push(`code fragment “${ii.code.split(/[-\/]/)[0]}” in PO`); }
+        const j = jaccard(ii.desc, pi.desc); if (j > 0.3) { sc += 2; why.push('similar description'); } else if (j > 0.1) sc += 1;
+        if (!best || sc > best.sc) best = { sc, k, why };
+      });
+      const single = inv.lineItems.length === 1 && po.lineItems.length === 1;
+      if (best && (best.sc >= 4 || single)) { usedPo.add(best.k); pairs.push({ ii, pi: po.lineItems[best.k], sc: best.sc, why: best.why, single }); }
+      else pairs.push({ ii, pi: null });
+    });
+    po.lineItems.forEach((pi, k) => { if (!usedPo.has(k)) add({ group: 'Line items', field: `PO item: ${pi.desc.slice(0, 40)}`, po: `${fmtQty(pi.qty)} × ${pi.price.raw} = ${pi.amount.raw}`, inv: '', status: ST.NOINV, note: 'PO line has no matching invoice line. Not added automatically.' }); });
+
+    pairs.forEach((pr, n) => {
+      const ii = pr.ii, pi = pr.pi, lbl = inv.lineItems.length > 1 ? ` (line ${n + 1})` : '';
+      if (!pi) { add({ group: 'Line items', field: `Invoice item${lbl}`, po: '', inv: `${ii.desc.slice(0, 50)}: ${fmtQty(ii.qty)} × ${ii.price.raw}`, status: ST.NOPO, note: 'No matching PO line found. Review manually.' }); return; }
+      const confident = pr.sc >= 6;
+      const matchNote = `Matched on ${pr.why.join(', ') || 'position'}${pr.single ? ' (one line item in each document)' : ''}.`;
+      const descSim = jaccard(ii.desc, pi.desc);
+      add({ group: 'Line items', field: `Description${lbl}`, po: pi.desc, inv: ii.desc, status: descSim > 0.6 ? ST.MATCH : ST.REVIEW, note: (descSim > 0.6 ? '' : 'Descriptions are worded differently. Invoice wording kept; confirm it is the same product. ') + matchNote });
+      const fieldRow = (field, pTok, iTok, kind) => {
+        if (!pTok || !iTok) return null;
+        const same = pTok.v === iTok.v;
+        const status = same ? ST.MATCH : (confident ? ST.MISMATCH : ST.REVIEW);
+        const proposed = same ? '' : fmt(pTok.v, Math.max(iTok.dec, kind === 'qty' ? iTok.dec : Math.min(pTok.dec, 4)), /,/.test(iTok.raw) || pTok.v >= 1000n * SCALE);
+        return add({ group: 'Line items', field: field + lbl, po: pTok.raw, inv: iTok.raw, status, proposed, poValue: pTok.v, invValue: iTok.v, edit: same ? null : editFor(iTok), kind, line: n,
+          note: same ? '' : (confident ? '' : 'Line match is uncertain, so approval is required. ') + (ocrNote && !same ? ocrNote : '') });
+      };
+      fieldRow('Quantity', pi.qty, ii.qty, 'qty');
+      fieldRow('Unit price', pi.price, ii.price, 'price');
+      if (pi.discount || ii.discount) {
+        if (pi.discount && ii.discount) fieldRow('Discount', pi.discount, ii.discount, 'discount');
+        else add({ group: 'Line items', field: 'Discount' + lbl, po: pi.discount ? pi.discount.raw : '', inv: ii.discount ? ii.discount.raw : '', status: ST.REVIEW, note: 'A discount appears in only one document.' });
+      }
+      const ar = fieldRow('Line amount', pi.amount, ii.amount, 'amount');
+      if (ii.quality === 'approx' && ar) ar.note = (ar.note + ' Invoice qty × price does not equal its own line amount.').trim();
+    });
+    if (!inv.lineItems.length) add({ group: 'Line items', field: 'Line items', po: po.lineItems.length + ' found', inv: '', status: ST.REVIEW, note: 'No line could be read from the invoice (qty × price = amount not found).' });
+    if (po.qtyStatement != null && po.lineItems.length === 1 && po.qtyStatement !== po.lineItems[0].qty.v) add({ group: 'Line items', field: 'PO quantity statement', po: fmt(po.qtyStatement, 0), inv: '', status: ST.REVIEW, note: 'The PO terms state a quantity different from its own table.' });
+
+    // --- totals -------------------------------------------------------
+    const pt = po.totals, it = inv.totals;
+    const totalRow = (field, pv, iv, key, depNote) => {
+      if (!iv || !iv.token) { if (pv) add({ group: 'Totals', field, po: fmt(pv.v), inv: '', status: ST.NOINV, note: 'Not found on the invoice.' }); return null; }
+      if (!pv) { add({ group: 'Totals', field, po: '', inv: iv.token.raw, status: ST.NOPO, note: 'Not found in the PO.' }); return null; }
+      const same = pv.v === iv.v; const dec = iv.token.dec || 2;
+      let status = same ? ST.MATCH : ST.MISMATCH; let note = '';
+      if (pv.derived) note += `PO value derived (${pv.derived}). `;
+      if (pv.conflict) { status = same ? status : ST.REVIEW; note += `OCR also read ${pv.conflict.join(', ')}. `; }
+      if (depNote && !same) note += depNote;
+      return add({ group: 'Totals', field, key, po: pv.token ? pv.token.raw : fmt(pv.v, dec), inv: iv.token.raw, status, proposed: same ? '' : fmt(pv.v, dec, true), poValue: pv.v, invValue: iv.v, edit: same ? null : editFor(iv.token), note: note.trim(), approved: !same && status === ST.MISMATCH && !pv.conflict });
+    };
+    totalRow('Total excluding VAT (subtotal)', pt.subtotal, it.subtotal, 'subtotal', 'Follows from the line amount.');
+    // VAT rate
+    if (pt.rate != null || it.rate != null) {
+      const same = pt.rate != null && it.rate != null && pt.rate === it.rate;
+      add({ group: 'Totals', field: 'VAT rate', po: pt.rate != null ? fmt(pt.rate, 0) + '%' : '', inv: it.rate != null ? fmt(it.rate, 0) + '%' : '', status: same ? ST.MATCH : (pt.rate == null ? ST.NOPO : it.rate == null ? ST.NOINV : ST.REVIEW), note: same ? '' : 'The tax rate differs or is missing. The tax treatment is never changed automatically.' });
+    }
+    const rate = pt.rate ?? it.rate;
+    let vatNote = '';
+    if (pt.vat && pt.subtotal) {
+      const vc = vatCheck(pt.subtotal.v, rate, pt.vat.v);
+      if (vc) vatNote = vc.matches === 'both' ? '' : vc.matches === 'halfup' ? `PO VAT is ${fmt(rate, 0)}% rounded half-up (truncating would give ${fmt(vc.trunc)}). ` : vc.matches === 'truncate' ? `PO VAT is ${fmt(rate, 0)}% truncated (rounding would give ${fmt(vc.half)}). ` : `PO VAT does not equal ${fmt(rate, 0)}% of the subtotal (${fmt(vc.raw, 4)}). `;
+    }
+    const vr = totalRow('VAT amount', pt.vat, it.vat, 'vat', vatNote);
+    if (vr && pt.vat && pt.vat.derived) { const vc = vatCheck(pt.subtotal.v, rate, pt.vat.v); if (!vc || !vc.matches) { vr.status = ST.REVIEW; vr.approved = false; vr.note += ' The derived VAT does not agree with the rate, so approval is required.'; } }
+    if (vr && vr.status === ST.MATCH && vatNote) vr.note = vatNote.trim();
+    const tr = totalRow('Total including VAT', pt.total, it.total, 'total');
+    // amount in words follows the (proposed) total
+    const w = inv.kv.words;
+    if (w && w.text && it.total) {
+      const target = tr && tr.proposed ? pt.total.v : it.total.v;
+      const aw = amountInWords(target, w.text);
+      const same = aw.text.replace(/\s+/g, ' ').toLowerCase() === w.text.replace(/\s+/g, ' ').toLowerCase();
+      add({ group: 'Totals', field: 'Amount in words', key: 'words', po: '', inv: w.text, status: same ? ST.MATCH : (aw.confident ? ST.MISMATCH : ST.REVIEW), proposed: same ? '' : aw.text, dependsOn: tr && tr.proposed ? tr.id : null,
+        edit: same ? null : (w.items[0] && w.items[0].src === 'text' ? { page: w.items[0].page, item: w.items[0], oldRaw: w.items[0].str.trim(), whole: true, inlinePrefix: w.inline ? w.prefix : null } : null),
+        note: same ? '' : ((tr && tr.proposed ? 'Updated to match the corrected total. ' : 'Words do not match the invoice total. ') + (aw.reason || '')).trim(), approved: !same && aw.confident });
+    }
+    pt.notes.forEach(nt => add({ group: 'Totals', field: 'PO label check', po: '', inv: '', status: ST.REVIEW, note: nt }));
+
+    // --- parties, delivery, currency ---------------------------------
+    if (inv.kv.purchaserTin || po.tin) {
+      const iv = inv.kv.purchaserTin ? inv.kv.purchaserTin.text : '';
+      const same = po.tin && normRef(iv) === normRef(po.tin);
+      add({ group: 'Parties', field: 'Purchaser TIN', po: po.tin || '', inv: iv, status: !po.tin ? ST.NOPO : same ? ST.MATCH : ST.REVIEW, proposed: !po.tin || same ? '' : po.tin,
+        edit: !po.tin || same || !inv.kv.purchaserTin || !inv.kv.purchaserTin.items[0] ? null : { page: inv.kv.purchaserTin.items[0].page, item: inv.kv.purchaserTin.items[0], oldRaw: inv.kv.purchaserTin.items[0].str.trim(), whole: true },
+        approved: false, note: !po.tin || same ? '' : 'A TIN appears in the PO. Confirm it belongs to the purchaser before approving this change.' });
+    }
+    if (inv.kv.deliveryDate || po.deliveryPhrase) {
+      const iv = inv.kv.deliveryDate ? inv.kv.deliveryDate.text : '';
+      add({ group: 'Delivery', field: 'Delivery date / deadline', po: po.deliveryDate || (po.deliveryPhrase ? `Unclear: “${po.deliveryPhrase.slice(0, 50)}”` : ''), inv: iv, status: po.deliveryDate || po.deliveryPhrase ? ST.REVIEW : ST.NOPO,
+        note: 'Delivery dates are invoice-specific and are never changed. Check the invoice date against the PO deadline (date formats may differ: dd/mm vs mm/dd).' });
+    }
+    if (inv.kv.placeOfSupply) {
+      const m = /(?:deliver(?:ed)?\s+(?:goods\s+)?to|completed to)\s+([^\n.]{5,90})/i.exec(po.allText);
+      add({ group: 'Delivery', field: 'Place of supply', po: m ? m[1].trim() : '', inv: inv.kv.placeOfSupply.full || inv.kv.placeOfSupply.text, status: m ? (jaccard(m[1], inv.kv.placeOfSupply.full || inv.kv.placeOfSupply.text) > 0.4 ? ST.MATCH : ST.REVIEW) : ST.NOPO, note: m ? 'Invoice-specific field. Confirm which address should appear. Not changed automatically.' : '' });
+    }
+    add({ group: 'Other', field: 'Currency', po: po.currency || '', inv: inv.currency || '', status: po.currency && inv.currency ? (po.currency === inv.currency ? ST.MATCH : ST.REVIEW) : (po.currency ? ST.NOINV : ST.NOPO), note: po.currency === inv.currency ? '' : 'Currency could not be confirmed in both documents.' });
+
+    rows.forEach(r => { if (!r.edit) r.approved = false; if (r.edit && r.proposed === '') r.edit = null; });
+    return { rows, po, inv, poExt, invExt };
+  }
+  const fmtQty = t => t.raw;
+
+  /* ------------------------------------------------------------------ *
+   * 7. Financial validation of the corrected invoice
+   * ------------------------------------------------------------------ */
+  function validate(cmp) {
+    const { rows, inv } = cmp;
+    const final = (row, fallback) => row && row.approved && row.proposed ? parseDec(row.proposed) : fallback;
+    const byField = (re, line) => rows.find(r => re.test(r.field) && (line == null || r.line === line));
+    const checks = [];
+    let sum = 0n;
+    inv.lineItems.forEach((li, n) => {
+      const q = final(rows.find(r => r.kind === 'qty' && r.line === n), li.qty.v);
+      const p = final(rows.find(r => r.kind === 'price' && r.line === n), li.price.v);
+      const a = final(rows.find(r => r.kind === 'amount' && r.line === n), li.amount.v);
+      const d = li.discount ? final(rows.find(r => r.kind === 'discount' && r.line === n), li.discount.v) : 0n;
+      const prod = mul(q, p).value - d; sum += a;
+      const ok = abs(prod - a) <= 100n;
+      checks.push({ name: `Line ${n + 1}: quantity × unit price${d ? ' − discount' : ''} = line amount`, ok, detail: `${fmt(q, 0)} × ${fmt(p)}${d ? ' − ' + fmt(d) : ''} = ${fmt(prod)}; line shows ${fmt(a)}` });
+    });
+    const t = inv.totals;
+    const sub = final(rows.find(r => r.key === 'subtotal'), t.subtotal ? t.subtotal.v : null);
+    const vat = final(rows.find(r => r.key === 'vat'), t.vat ? t.vat.v : null);
+    const tot = final(rows.find(r => r.key === 'total'), t.total ? t.total.v : null);
+    const rate = cmp.po.totals.rate ?? t.rate;
+    if (sub != null && inv.lineItems.length) checks.push({ name: 'Sum of line amounts = subtotal', ok: sum === sub, detail: `${fmt(sum)} vs ${fmt(sub)}` });
+    if (sub != null && vat != null && rate != null) {
+      const vc = vatCheck(sub, rate, vat);
+      checks.push({ name: `VAT = ${fmt(rate, 0)}% of subtotal`, ok: !!vc.matches, warn: vc.matches === 'halfup' || vc.matches === 'truncate', detail: vc.matches === 'both' ? `${fmt(vat)} (exact)` : vc.matches ? `${fmt(vat)}: ${fmt(vc.raw, 4)} ${vc.matches === 'halfup' ? 'rounded half-up' : 'truncated'} to 2 decimals` : `${fmt(vat)} vs ${fmt(vc.raw, 4)} calculated` });
+    }
+    if (sub != null && vat != null && tot != null) checks.push({ name: 'Subtotal + VAT = total', ok: sub + vat === tot, detail: `${fmt(sub)} + ${fmt(vat)} = ${fmt(sub + vat)}; total shows ${fmt(tot)}` });
+    const wr = rows.find(r => r.key === 'words');
+    if (tot != null && inv.kv.words) {
+      const shown = wr && wr.approved && wr.proposed ? wr.proposed : inv.kv.words.text;
+      const expect = amountInWords(tot, inv.kv.words.text).text;
+      checks.push({ name: 'Amount in words = total', ok: shown.replace(/\s+/g, ' ').toLowerCase() === expect.replace(/\s+/g, ' ').toLowerCase(), detail: shown });
+    }
+    const totalRow = rows.find(r => r.key === 'total');
+    if (totalRow && cmp.po.totals.total) checks.push({ name: 'Invoice total = PO total', ok: tot === cmp.po.totals.total.v, detail: `${fmt(tot)} vs PO ${fmt(cmp.po.totals.total.v)}` });
+    return checks;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 8. Bank-details table detection
+   * ------------------------------------------------------------------ */
+  const BANK_RE = /^(bank(\s*name)?|branch(\s*name)?|swift(\s*code)?|bic|account\s*(no|number|name)\.?|a\/c\s*no\.?|currency(\s*rate)?|iban|beneficiary(\s*name)?|sort\s*code|routing\s*(no|number))\s*:?$/i;
+  function findBankRegion(page) {
+    const labels = page.items.filter(it => BANK_RE.test(it.str.trim()));
+    if (labels.length < 2) return null;
+    // cluster by left edge
+    const groups = [];
+    labels.forEach(l => { let g = groups.find(g => Math.abs(g.x - l.x) < 6); if (!g) { g = { x: l.x, items: [] }; groups.push(g); } g.items.push(l); });
+    const g = groups.sort((a, b) => b.items.length - a.items.length)[0];
+    if (g.items.length < 2) return null;
+    g.items.sort((a, b) => b.y - a.y);
+    // keep only a vertically contiguous run
+    const run = [g.items[0]];
+    for (let i = 1; i < g.items.length; i++) if (run[run.length - 1].y - g.items[i].y < g.items[i].h * 3) run.push(g.items[i]); else break;
+    if (run.length < 2) return null;
+    const ys = run.map(r => r.y);
+    const lineItems = page.items.filter(it => run.some(r => Math.abs(r.y - it.y) < Math.max(1.5, r.h * 0.35)) && it.x >= g.x - 2);
+    let x0 = Math.min(...lineItems.map(i => i.x)), x1 = Math.max(...lineItems.map(i => i.x + i.w));
+    let y0 = Math.min(...ys) - run[0].h * 0.4, y1 = Math.max(...ys) + run[0].h;
+    return { x0, y0, x1, y1, labels: run.map(r => r.str.trim()), items: lineItems };
+  }
+  /** Grow the text region to the whole table: every line that touches it, then every line touching those (connected grid). */
+  function growRegionWithPaths(reg, paths, runs, pageW) {
+    const touch = (p, b, t) => p.x0 <= b.x1 + t && p.x1 >= b.x0 - t && p.y0 <= b.y1 + t && p.y1 >= b.y0 - t;
+    const band = { y0: reg.y0 - 14, y1: reg.y1 + 14 };
+    const cand = paths.filter(p => !p.clip && p.y0 >= band.y0 && p.y1 <= band.y1 && (p.x1 - p.x0) < (pageW || 1e9) * 0.8);
+    const inc = new Set(cand.filter(p => touch(p, reg, 2)));
+    let grew = true;
+    while (grew) { grew = false; cand.forEach(p => { if (!inc.has(p) && [...inc].some(q => touch(p, q, 1.5))) { inc.add(p); grew = true; } }); }
+    const r = { ...reg };
+    inc.forEach(p => { r.x0 = Math.min(r.x0, p.x0); r.x1 = Math.max(r.x1, p.x1); r.y0 = Math.min(r.y0, p.y0); r.y1 = Math.max(r.y1, p.y1); });
+    return r;
+  }
+  const inBox = (x, y, b, pad = 1) => x >= b.x0 - pad && x <= b.x1 + pad && y >= b.y0 - pad && y <= b.y1 + pad;
+  const pathIn = (p, b, pad = 1.5) => p.x0 >= b.x0 - pad && p.x1 <= b.x1 + pad && p.y0 >= b.y0 - pad && p.y1 <= b.y1 + pad;
+
+  /* ------------------------------------------------------------------ *
+   * 9. Generate corrected invoice
+   * ------------------------------------------------------------------ */
+  // Authorization box, measured from the reference invoice (points; y measured down from the box top)
+  const AUTH = { w: 480.9, h: 76.7, r: 12.4, stroke: 1.24, color: [0, 0.8, 0.6], size: 9, labels: [['Invoiced by', 17.0, 79.5, 87.0, 22.3], ['Checked by', 17.0, 80.1, 87.6, 45.8], ['Authorized by', 16.4, 78.9, 86.4, 69.3]], dots: 30 };
+
+  async function getPageContent(PDFLib, pdfDoc, page) {
+    const { PDFArray, PDFRawStream, decodePDFRawStream } = PDFLib;
+    const c = page.node.Contents(); if (!c) return '';
+    const streams = c instanceof PDFArray ? c.asArray().map(x => pdfDoc.context.lookup(x)) : [c];
+    return streams.map(s => {
+      if (s instanceof PDFRawStream) return bytesToLatin1(decodePDFRawStream(s).decode());
+      if (s.getContents) return bytesToLatin1(s.getContents());
+      if (s.getUnencodedContents) return bytesToLatin1(s.getUnencodedContents());
+      return '';
+    }).join('\n');
+  }
+  function setPageContent(PDFLib, pdfDoc, page, str) {
+    const stream = pdfDoc.context.flateStream(latin1ToBytes(str));
+    page.node.set(PDFLib.PDFName.of('Contents'), pdfDoc.context.register(stream));
+  }
+  function baseFontOf(PDFLib, page, resName) {
+    try {
+      const { PDFName, PDFDict } = PDFLib;
+      const res = page.node.Resources(); const fonts = res && res.lookup(PDFName.of('Font'), PDFDict);
+      const f = fonts && fonts.lookup(PDFName.of(resName), PDFDict);
+      const bf = f && f.lookup(PDFName.of('BaseFont'));
+      return bf ? bf.decodeText ? bf.decodeText() : bf.toString().replace(/^\//, '') : '';
+    } catch (e) { return ''; }
+  }
+  function standardFontFor(PDFLib, baseName) {
+    const n = (baseName || '').replace(/^[A-Z]{6}\+/, '').toLowerCase(); const S = PDFLib.StandardFonts;
+    const bold = /bold|black|heavy|semibold/.test(n), ital = /italic|oblique/.test(n);
+    if (/times|serif|roman|georgia|garamond|cambria|book/.test(n) && !/sans/.test(n)) return bold && ital ? S.TimesRomanBoldItalic : bold ? S.TimesRomanBold : ital ? S.TimesRomanItalic : S.TimesRoman;
+    if (/courier|mono|consol/.test(n)) return bold ? S.CourierBold : S.Courier;
+    return bold && ital ? S.HelveticaBoldOblique : bold ? S.HelveticaBold : ital ? S.HelveticaOblique : S.Helvetica;
+  }
+  function colorOf(PDFLib, fill) {
+    const v = fill && fill.v || [0];
+    if (fill.space === 'rg' && v.length === 3) return PDFLib.rgb(v[0], v[1], v[2]);
+    if (fill.space === 'k' && v.length === 4) return PDFLib.cmyk(v[0], v[1], v[2], v[3]);
+    return PDFLib.grayscale(v[0] ?? 0);
+  }
+  /** column alignment of a numeric item from its neighbours in the same column */
+  function alignmentOf(item, page) {
+    const isNum = /^[\d,.\s()%-]+$/.test(item.str.trim());
+    const neigh = page.items.filter(o => o !== item && Math.abs(o.y - item.y) > 1 && /\d/.test(o.str) && o.x < item.x + item.w && o.x + o.w > item.x);
+    const right = neigh.filter(o => Math.abs((o.x + o.w) - (item.x + item.w)) < 1).length;
+    const left = neigh.filter(o => Math.abs(o.x - item.x) < 1).length;
+    const center = neigh.filter(o => Math.abs((o.x + o.w / 2) - (item.x + item.w / 2)) < 1).length;
+    if (right >= left && right >= center && right > 0) return 'right';
+    if (left > right && left >= center) return 'left';
+    if (center > 0) return 'center';
+    return isNum ? 'right' : 'left';
+  }
+  function roundedRectPath(w, h, r) {
+    const k = 0.5523 * r;
+    return `M ${r} 0 L ${w - r} 0 C ${w - r + k} 0 ${w} ${r - k} ${w} ${r} L ${w} ${h - r} C ${w} ${h - r + k} ${w - r + k} ${h} ${w - r} ${h} L ${r} ${h} C ${r - k} ${h} 0 ${h - r + k} 0 ${h - r} L 0 ${r} C 0 ${r - k} ${r - k} 0 ${r} 0 Z`;
+  }
+
+  /**
+   * @param opts {removeBank:bool, addAuthBox:bool, boxPages:'first'|'all', originalLabel:bool}
+   * returns {bytes, report}
+   */
+  async function generate(PDFLib, invBytes, cmp, opts) {
+    const { PDFDocument, StandardFonts, rgb } = PDFLib;
+    const pdfDoc = await PDFDocument.load(invBytes.slice(0), { updateMetadata: false });
+    const pages = pdfDoc.getPages();
+    const ext = cmp.invExt;
+    const report = { applied: [], skipped: [], warnings: [], pagesTouched: [], bankRegion: null, box: null, original: null, expect: { removed: [], added: [] } };
+    const edits = cmp.rows.filter(r => r.approved && r.edit && r.proposed);
+    cmp.rows.filter(r => r.approved && !r.edit).forEach(r => report.skipped.push(`${r.field}: no editable position on the invoice.`));
+    const fonts = {};
+    const font = async name => (fonts[name] = fonts[name] || await pdfDoc.embedFont(name));
+
+    for (let pi = 0; pi < pages.length; pi++) {
+      const pnum = pi + 1, page = pages[pi], pext = ext.pages[pi];
+      const pageEdits = edits.filter(e => e.edit.page === pnum);
+      const dup = opts.originalLabel && pext && pext.items.find(it => /^\s*DUPLICATE\s*$/i.test(it.str));
+      let bank = opts.removeBank && pext && !pext.scanned ? findBankRegion(pext) : null;
+      if (!pageEdits.length && !dup && !bank) continue;
+      report.pagesTouched.push(pnum);
+      if (pext.scanned) report.warnings.push(`Page ${pnum} is a scanned image. Corrections are drawn over the image, so the original layout may not be preserved exactly.`);
+      if (pext.rotate) report.warnings.push(`Page ${pnum} is rotated ${pext.rotate}°. Check the placement of edits.`);
+      const src = await getPageContent(PDFLib, pdfDoc, page);
+      const ops = parseOps(src); const { runs, paths, xobjects } = interpret(ops);
+      const remove = new Set(); const draws = []; const covers = [];
+
+      const runsForItem = item => {
+        let rs = runs.filter(r => Math.abs(r.x - item.x) < 1 && Math.abs(r.y - item.y) < 1);
+        if (!rs.length) rs = runs.filter(r => r.x >= item.x - 1 && r.x <= item.x + item.w - 0.5 && Math.abs(r.y - item.y) < 1.5);
+        return rs;
+      };
+      const replaceItem = async (item, newText, opt = {}) => {
+        const rs = runsForItem(item);
+        const r0 = rs[0];
+        const fname = opt.font || standardFontFor(PDFLib, r0 ? baseFontOf(PDFLib, page, r0.font) : '');
+        const f = await font(fname);
+        const size = opt.size || (r0 ? r0.size : item.size);
+        const width = f.widthOfTextAtSize(newText, size);
+        const align = opt.align || alignmentOf(item, pext);
+        const x = align === 'right' ? item.x + item.w - width : align === 'center' ? item.x + item.w / 2 - width / 2 : item.x;
+        if (rs.length) rs.forEach(r => r.ops.forEach(i => remove.add(i)));
+        else covers.push({ x: item.x - 0.5, y: item.y - size * 0.22, w: item.w + 1, h: size * 0.95 });
+        draws.push({ text: newText, x, y: item.y, size, font: f, color: r0 ? colorOf(PDFLib, r0.fill) : rgb(0, 0, 0) });
+        return { removed: rs.length > 0, x, width, size, align };
+      };
+
+      for (const e of pageEdits) {
+        const it = e.edit.item; const cur = it.str;
+        let newText;
+        if (e.edit.whole) newText = (e.edit.inlinePrefix || '') + e.proposed;
+        else newText = cur.trim() === e.edit.oldRaw ? e.proposed : cur.replace(e.edit.oldRaw, e.proposed).trim();
+        const res = await replaceItem(it, newText);
+        report.applied.push({ field: e.field, from: cur.trim(), to: newText, page: pnum, method: res.removed ? 'text replaced' : 'covered and redrawn', align: res.align });
+        if (!res.removed) report.warnings.push(`${e.field}: original text could not be isolated, so it was covered with white and redrawn.`);
+        report.expect.removed.push(cur.trim()); report.expect.added.push(newText);
+      }
+      if (dup) {
+        const res = await replaceItem(dup, 'ORIGINAL', { font: StandardFonts.TimesRoman, align: 'right' });
+        report.original = { page: pnum, x: res.x, y: dup.y, size: res.size, rightEdge: dup.x + dup.w };
+        report.applied.push({ field: 'Copy label', from: 'DUPLICATE', to: 'ORIGINAL', page: pnum, method: res.removed ? 'text replaced' : 'covered and redrawn' });
+        report.expect.removed.push(dup.str.trim()); report.expect.added.push('ORIGINAL');
+      }
+      if (bank) {
+        bank = growRegionWithPaths(bank, paths, runs, page.getSize().width);
+        let nRuns = 0, nPaths = 0;
+        runs.forEach(r => { if (inBox(r.x, r.y, bank)) { r.ops.forEach(i => remove.add(i)); nRuns++; } });
+        paths.forEach(p => { if (!p.clip && pathIn(p, bank)) { for (let i = p.start; i <= p.end; i++) remove.add(i); nPaths++; } });
+        report.bankRegion = { page: pnum, ...bank, runs: nRuns, paths: nPaths };
+        bank.items.forEach(it => report.expect.removed.push(it.str.trim()));
+        report.applied.push({ field: 'Bank details table', from: bank.labels.join(', '), to: '(removed)', page: pnum, method: `${nRuns} text runs and ${nPaths} table lines removed` });
+        const pay = ext.pages.flatMap(p => p.items).find(it => /bank\s*transfer|bank\s*deposit/i.test(it.str));
+        if (pay) report.warnings.push('The Mode of Payment line still mentions bank transfer, but the bank details have been removed. The wording was left unchanged.');
+      } else if (opts.removeBank && pnum === 1 && !ext.pages.some(p => findBankRegion(p))) {
+        report.skipped.push('Bank details table: not found on the invoice.');
+      }
+      if (xobjects && !remove.size && pageEdits.length) report.warnings.push(`Page ${pnum} draws content from embedded objects that cannot be edited in place.`);
+
+      const rewritten = rewrite(src, ops, remove);
+      if (remove.size) setPageContent(PDFLib, pdfDoc, page, rewritten);
+      covers.forEach(c => page.drawRectangle({ x: c.x, y: c.y, width: c.w, height: c.h, color: rgb(1, 1, 1) }));
+      draws.forEach(d => page.drawText(d.text, { x: d.x, y: d.y, size: d.size, font: d.font, color: d.color }));
+
+      // post-check: nothing left inside the bank region of the rewritten stream
+      if (bank) {
+        const after = interpret(parseOps(rewritten));
+        report.bankRegion.leftRuns = after.runs.filter(r => inBox(r.x, r.y, bank)).length;
+        report.bankRegion.leftPaths = after.paths.filter(p => !p.clip && pathIn(p, bank)).length;
+      }
+      const boxHere = opts.addAuthBox && (opts.boxPages === 'all' || pnum === 1);
+      if (bank && opts.addAuthBox && !boxHere) report.skipped.push(`Authorization box: not placed on page ${pnum}${pnum === pages.length ? ' (last page)' : ''}. The bank details there were removed only, as set in Output format.`);
+      if (bank && boxHere) {
+        const { width: pw } = page.getSize();
+        const others = pext.items.filter(it => !bank.items.includes(it));
+        const right = Math.max(...others.map(o => o.x + o.w), ...paths.filter(p => !pathIn(p, bank)).map(p => p.x1));
+        const x0 = bank.x0 + 0.1, top = bank.y1 + 0.7;
+        let s = 1; const w = Math.min(AUTH.w, Math.max(right, pw * 0.75) - x0);
+        const below = others.filter(o => o.y + o.h * 0.8 < bank.y0 && o.x < x0 + w).map(o => o.y + o.h * 0.8);
+        const belowP = paths.filter(p => !pathIn(p, bank) && p.y1 < bank.y0 && p.x0 < x0 + w).map(p => p.y1);
+        const floor = Math.max(0, ...below, ...belowP);
+        if (top - AUTH.h < floor + 2) { s = Math.max(0.5, (top - floor - 2) / AUTH.h); report.warnings.push(`The authorization box was scaled to ${Math.round(s * 100)}% to fit above the content below it.`); }
+        const H = AUTH.h * s, W = w * (s < 1 ? 1 : 1);
+        page.drawSvgPath(roundedRectPath(W, H, AUTH.r * s), { x: x0, y: top, borderColor: rgb(...AUTH.color), borderWidth: AUTH.stroke * s });
+        const fb = await font(StandardFonts.HelveticaBold);
+        AUTH.labels.forEach(([label, lx, cx, dx, by]) => {
+          const y = top - by * s;
+          page.drawText(label, { x: x0 + lx * s, y, size: AUTH.size * s, font: fb, color: rgb(0, 0, 0) });
+          page.drawText(':', { x: x0 + cx * s, y, size: AUTH.size * s, font: fb, color: rgb(0, 0, 0) });
+          page.drawText('.'.repeat(AUTH.dots), { x: x0 + dx * s, y, size: AUTH.size * s, font: fb, color: rgb(0, 0, 0) });
+          report.expect.added.push(label, ':', '.'.repeat(AUTH.dots));
+        });
+        const after = interpret(parseOps(rewritten));
+        const crossing = after.paths.filter(p => !p.clip && p.x0 < x0 + W - 1 && p.x1 > x0 + 1 && p.y0 < top - 1 && p.y1 > top - H + 1 && !(p.x0 <= x0 && p.x1 >= x0 + W && p.y0 <= top - H && p.y1 >= top)).length;
+        report.box = { page: pnum, x: x0, y: top - H, w: W, h: H, scale: s, floor, crossing };
+        report.applied.push({ field: 'Authorization box', from: '', to: 'Invoiced by / Checked by / Authorized by', page: pnum, method: s < 1 ? `added at ${Math.round(s * 100)}% size` : 'added' });
+      }
+    }
+    if (opts.addAuthBox && !report.box && !report.skipped.some(x => /^Authorization box/.test(x))) report.skipped.push('Authorization box: no bank table found on the first page, so no position could be determined. Box not added.');
+    if (opts.originalLabel && !report.original) report.skipped.push('Copy label: “DUPLICATE” not found on the invoice.');
+    const bytes = await pdfDoc.save({ useObjectStreams: false });
+    return { bytes, report };
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 10. Quality assurance: compare original and corrected PDFs
+   * ------------------------------------------------------------------ */
+  async function qualityCheck(pdfjsLib, PDFLib, origBytes, outBytes, cmp, gen) {
+    const res = [];
+    const add = (name, status, detail) => res.push({ name, status, detail });
+    add('Source PDFs processed', cmp.poExt.pages.every(p => !p.ocrFailed) && cmp.invExt.pages.length ? 'pass' : 'fail',
+      `PO: ${cmp.poExt.numPages} page(s)${cmp.poExt.ocrPages ? `, ${cmp.poExt.ocrPages} read by OCR` : ''}. Invoice: ${cmp.invExt.numPages} page(s).`);
+    let o, n;
+    try { o = await extractDocument(pdfjsLib, origBytes); n = await extractDocument(pdfjsLib, outBytes); }
+    catch (e) { add('Corrected PDF readable', 'fail', e.message); return res; }
+    add('Corrected PDF readable', 'pass', `Opened and read ${n.numPages} page(s).`);
+    add('Page count unchanged', o.numPages === n.numPages ? 'pass' : 'fail', `${o.numPages} → ${n.numPages}`);
+    const sizesSame = o.pages.every((p, i) => n.pages[i] && Math.abs(p.width - n.pages[i].width) < 0.01 && Math.abs(p.height - n.pages[i].height) < 0.01);
+    add('Page size unchanged', sizesSame ? 'pass' : 'fail', o.pages.map(p => `${p.width.toFixed(0)}×${p.height.toFixed(0)} pt`).join(', '));
+
+    // text diff as multisets
+    const bag = ext => { const m = new Map(); ext.pages.forEach(p => p.items.forEach(it => { const s = it.str.trim(); if (s) m.set(s, (m.get(s) || 0) + 1); })); return m; };
+    const A = bag(o), B = bag(n);
+    const removed = [], added = [];
+    new Set([...A.keys(), ...B.keys()]).forEach(k => { const d = (B.get(k) || 0) - (A.get(k) || 0); for (let i = 0; i < Math.abs(d); i++) (d > 0 ? added : removed).push(k); });
+    const expR = gen.report.expect.removed.slice(), expA = gen.report.expect.added.slice();
+    const take = (list, s) => { const i = list.indexOf(s); if (i >= 0) { list.splice(i, 1); return true; } return false; };
+    const unexpectedRemoved = removed.filter(s => !take(expR, s));
+    const unexpectedAdded = added.filter(s => !take(expA, s));
+    add('Approved corrections applied', expA.filter(s => !/^[:.]+$/.test(s)).length === 0 || !gen.report.applied.length ? 'pass' : 'warn',
+      gen.report.applied.map(a => `${a.field}: ${a.from || '—'} → ${a.to}`).join('\n') || 'No corrections approved.');
+    add('No unintended text changes', !unexpectedRemoved.length && !unexpectedAdded.length ? 'pass' : 'fail',
+      !unexpectedRemoved.length && !unexpectedAdded.length ? 'Every text difference between the two PDFs is one of the requested edits.' : `Unexpected removals: ${unexpectedRemoved.join(' | ') || 'none'}. Unexpected additions: ${unexpectedAdded.join(' | ') || 'none'}.`);
+    const missing = expR.filter(s => s.length > 1);
+    if (missing.length) add('Old values removed', 'warn', `Still present (may also appear elsewhere on the page): ${missing.join(' | ')}`);
+
+    // untouched pages: content stream identical
+    try {
+      const d1 = await PDFLib.PDFDocument.load(origBytes.slice(0)), d2 = await PDFLib.PDFDocument.load(outBytes.slice(0));
+      const p1 = d1.getPages(), p2 = d2.getPages(); const same = [], changed = [];
+      for (let i = 0; i < p1.length; i++) {
+        if (gen.report.pagesTouched.includes(i + 1)) continue;
+        const a = await getPageContent(PDFLib, d1, p1[i]), b = await getPageContent(PDFLib, d2, p2[i]);
+        (a === b ? same : changed).push(i + 1);
+      }
+      if (same.length || changed.length) add('Untouched pages preserved', changed.length ? 'fail' : 'pass', `${same.length ? 'Page ' + same.join(', ') + ': drawing instructions byte-identical to the original.' : ''}${changed.length ? ' Changed: page ' + changed.join(', ') : ''}`);
+    } catch (e) { add('Untouched pages preserved', 'warn', 'Could not compare page content: ' + e.message); }
+
+    const br = gen.report.bankRegion;
+    if (br) add('Bank table and lines removed', br.leftRuns === 0 && br.leftPaths === 0 ? 'pass' : 'fail', `${br.runs} text runs and ${br.paths} table lines removed from page ${br.page}; ${br.leftRuns + br.leftPaths} left in that area.`);
+    else if (gen.opts && gen.opts.removeBank) add('Bank table and lines removed', 'warn', 'No bank table found.');
+    const bx = gen.report.box;
+    if (bx) {
+      const pg = n.pages[bx.page - 1];
+      const overlap = pg.items.filter(it => !gen.report.expect.added.includes(it.str.trim()) && it.x < bx.x + bx.w && it.x + it.w > bx.x && it.y < bx.y + bx.h && it.y + it.h * 0.8 > bx.y);
+      add('Authorization box position', overlap.length || bx.crossing ? 'fail' : (bx.scale < 1 ? 'warn' : 'pass'), bx.crossing ? `${bx.crossing} leftover line(s) cross the box.` : overlap.length ? `Overlaps: ${overlap.map(o => o.str).join(' | ')}` : `Inside the former bank area on page ${bx.page}, ${bx.w.toFixed(0)}×${bx.h.toFixed(0)} pt, ${(bx.y - bx.floor).toFixed(1)} pt clear above the next content.`);
+    }
+    if (gen.report.original) {
+      const pg = n.pages[gen.report.original.page - 1];
+      const it = pg.items.find(i => i.str.trim() === 'ORIGINAL');
+      const dupLeft = pg.items.some(i => /^\s*DUPLICATE\s*$/i.test(i.str));
+      add('ORIGINAL replaces DUPLICATE', it && !dupLeft && Math.abs(it.x + it.w - gen.report.original.rightEdge) < 0.8 ? 'pass' : 'fail', it ? `Right edge ${(it.x + it.w).toFixed(2)} vs original ${gen.report.original.rightEdge.toFixed(2)}, ${gen.report.original.size} pt Times Roman.` : 'ORIGINAL not found in output.');
+    }
+    // overlap check for redrawn values
+    const overl = [];
+    gen.report.applied.filter(a => a.align).forEach(a => {
+      const pg = n.pages[a.page - 1]; const it = pg.items.find(i => i.str.trim() === a.to); if (!it) return;
+      pg.items.forEach(o => { if (o !== it && Math.abs(o.y - it.y) < it.h * 0.6 && o.x < it.x + it.w - 0.5 && o.x + o.w > it.x + 0.5) overl.push(`${a.to} / ${o.str}`); });
+    });
+    add('No overlapping text', overl.length ? 'fail' : 'pass', overl.length ? overl.join('; ') : 'Corrected values do not collide with neighbouring text.');
+    gen.report.warnings.forEach(w => add('Note', 'warn', w));
+    gen.report.skipped.forEach(w => add('Not applied', 'warn', w));
+    add('Visual check', 'info', 'Fonts are standard Times/Helvetica substitutes for the embedded subsets. Compare the preview with the original before sending.');
+    return res;
+  }
+
+  root.POCore = { parseDec, fmt, toNumber, mul, roundTo, amountInWords, intToWords, tokenize, parseOps, interpret, rewrite,
+    extractDocument, analyse, compare, validate, generate, qualityCheck, findBankRegion, vatCheck, ST, bytesToLatin1, latin1ToBytes };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* PO Invoice Verifier — user interface and workflow. Engine lives in core.js (window.POCore). */
+(function () {
+  'use strict';
+  const C = window.POCore;
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  const MAX_MB = 25;
+  const PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+
+  /* ---------------- library checks ---------------- */
+  const libsMissing = [];
+  if (!window.pdfjsLib) libsMissing.push('PDF reader (pdf.js)');
+  if (!window.PDFLib) libsMissing.push('PDF editor (pdf-lib)');
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js';
+    C.pdfjsOptions = { standardFontDataUrl: PDFJS_BASE + 'standard_fonts/', cMapUrl: PDFJS_BASE + 'cmaps/', cMapPacked: true };
+  }
+
+  /* ---------------- state ---------------- */
+  const S = {
+    docs: { po: null, inv: null },   // {name,size,bytes,pdf,pages}
+    ext: { po: null, inv: null },
+    cmp: null, gen: null, qa: null, validation: null,
+    busy: false, filter: 'all',
+  };
+  let tess = null;
+
+  /* ---------------- status / progress ---------------- */
+  function setStatus(msg, kind) { const p = $('#statusText'); p.textContent = msg; p.className = kind === 'err' ? 'err' : ''; }
+  function setProgress(frac) { const bar = $('#progress'); if (frac == null) { bar.hidden = true; return; } bar.hidden = false; $('#progressBar').style.width = Math.max(2, Math.min(100, frac * 100)) + '%'; }
+  function fmtSize(b) { return b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(2) + ' MB'; }
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  /* ---------------- confirm dialog ---------------- */
+  function confirmBox(title, text, yes = 'Confirm') {
+    return new Promise(res => {
+      const m = $('#confirmModal'); $('#cfTitle').textContent = title; $('#cfText').textContent = text; $('#cfYes').textContent = yes;
+      m.hidden = false; $('#cfNo').focus();
+      const done = v => { m.hidden = true; $('#cfYes').onclick = $('#cfNo').onclick = null; document.removeEventListener('keydown', key); res(v); };
+      const key = e => { if (e.key === 'Escape') done(false); };
+      $('#cfYes').onclick = () => done(true); $('#cfNo').onclick = () => done(false);
+      document.addEventListener('keydown', key);
+    });
+  }
+
+  /* ---------------- step state ---------------- */
+  function refresh() {
+    const both = S.docs.po && S.docs.inv;
+    const extracted = S.ext.po && S.ext.inv;
+    $('#btnExtract').disabled = S.busy || !both || !!extracted;
+    $('#btnCompare').disabled = S.busy || !extracted || !!S.cmp;
+    $('#btnReview').disabled = !S.cmp;
+    $('#btnGenerate').disabled = S.busy || !S.cmp;
+    $('#btnReport').disabled = S.busy || !S.cmp;
+    $('#btnReset').disabled = S.busy || (!S.docs.po && !S.docs.inv);
+    $$('.slot button').forEach(b => { b.disabled = S.busy; });
+    const step = !both ? 'upload' : !extracted ? 'extract' : !S.cmp ? 'compare' : !S.gen ? 'review' : 'download';
+    const order = ['upload', 'extract', 'compare', 'review', 'generate', 'download'];
+    $$('#stepper li').forEach(li => {
+      const i = order.indexOf(li.dataset.step), cur = order.indexOf(step);
+      li.className = i < cur || (step === 'download' && i <= cur) ? 'done' : i === cur ? 'current' : '';
+    });
+    if (!S.busy) {
+      if (!both) setStatus(S.docs.po || S.docs.inv ? `Now upload the ${S.docs.po ? 'Tax Invoice' : 'Purchase Order'}.` : 'Upload both PDFs to begin.');
+      else if (!extracted) setStatus('Both documents are loaded. Extract the document data next.');
+    }
+  }
+
+  /** drop everything that depends on the documents */
+  function invalidate(from) {
+    if (from === 'extract') { S.ext.po = S.ext.po && S.docs.po ? S.ext.po : null; S.ext.inv = S.ext.inv && S.docs.inv ? S.ext.inv : null; }
+    S.cmp = null; S.gen = null; S.qa = null; S.validation = null;
+    $('#results').hidden = true; $('#output').hidden = true;
+    $('#cmpTable tbody').innerHTML = ''; $('#summary').innerHTML = '';
+  }
+
+  /* ---------------- upload slots ---------------- */
+  function slotEl(kind) { return $('#slot-' + kind); }
+  function label(kind) { return kind === 'po' ? 'Purchase Order' : 'Tax Invoice'; }
+  function setSlotState(kind, text, cls) { const p = slotEl(kind).querySelector('[data-role=state]'); p.textContent = text; p.className = 'pill ' + (cls || ''); }
+  function setMeta(kind, f, v) { const el = slotEl(kind).querySelector(`[data-f="${f}"]`); if (el) el.textContent = v; }
+
+  async function acceptFile(kind, file) {
+    if (S.busy) return;
+    if (!file) return;
+    if (!(/\.pdf$/i.test(file.name) || file.type === 'application/pdf')) { setStatus(`“${file.name}” is not a PDF. Choose a .pdf file for the ${label(kind)}.`, 'err'); return; }
+    if (file.size > MAX_MB * 1048576) { setStatus(`“${file.name}” is ${fmtSize(file.size)}. The limit is ${MAX_MB} MB.`, 'err'); return; }
+    if (file.size < 100) { setStatus(`“${file.name}” is empty or damaged.`, 'err'); return; }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const head = String.fromCharCode(...bytes.slice(0, 1024)).indexOf('%PDF-');
+    if (head < 0) { setStatus(`“${file.name}” does not look like a PDF file (no PDF header).`, 'err'); return; }
+    if (libsMissing.length) { setStatus(`Cannot open PDFs: ${libsMissing.join(' and ')} did not load. Check the internet connection and reload the page.`, 'err'); return; }
+    let pdf;
+    try { pdf = await pdfjsLib.getDocument(Object.assign({ data: bytes.slice(0), isEvalSupported: false }, C.pdfjsOptions)).promise; }
+    catch (e) {
+      const msg = /password/i.test(e.name + e.message) ? 'is password-protected. Remove the password and upload it again.' : 'could not be opened. The file may be corrupt.';
+      setStatus(`“${file.name}” ${msg}`, 'err'); return;
+    }
+    const replacing = !!S.docs[kind];
+    if (S.docs[kind] && S.docs[kind].pdf) S.docs[kind].pdf.destroy();
+    S.docs[kind] = { name: file.name, size: file.size, bytes, pdf, pages: pdf.numPages };
+    S.ext[kind] = null; invalidate();
+    const el = slotEl(kind);
+    el.querySelector('[data-role=drop]').hidden = true;
+    el.querySelector('[data-role=loaded]').hidden = false;
+    el.querySelector('[data-role=emptyActions]').hidden = true;
+    setMeta(kind, 'name', file.name); setMeta(kind, 'size', fmtSize(file.size)); setMeta(kind, 'pages', String(pdf.numPages));
+    setMeta(kind, 'upload', replacing ? 'Replaced' : 'Uploaded'); setMeta(kind, 'extract', 'Not started');
+    setSlotState(kind, 'Ready', 'info');
+    renderThumbs(kind);
+    if (replacing && (S.ext.po || S.ext.inv)) setStatus(`${label(kind)} replaced. Earlier results were cleared; extract and compare again.`);
+    refresh();
+  }
+
+  async function renderThumbs(kind) {
+    const d = S.docs[kind]; const box = slotEl(kind).querySelector('[data-role=thumbs]'); box.innerHTML = '';
+    for (let p = 1; p <= Math.min(d.pages, 8); p++) {
+      const cv = await renderPage(d.pdf, p, 240);
+      cv.title = `Page ${p}. Click to preview.`; cv.addEventListener('click', () => preview(kind));
+      if (S.docs[kind] !== d) return; box.appendChild(cv);
+    }
+  }
+  async function renderPage(pdf, n, targetWidth, cv) {
+    const page = await pdf.getPage(n); const v1 = page.getViewport({ scale: 1 });
+    const scale = targetWidth / v1.width; const vp = page.getViewport({ scale });
+    cv = cv || document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    return cv;
+  }
+
+  function clearSlot(kind, wipe) {
+    const d = S.docs[kind];
+    if (d) { if (wipe && d.bytes) d.bytes.fill(0); if (d.pdf) d.pdf.destroy(); }
+    S.docs[kind] = null; S.ext[kind] = null; invalidate();
+    const el = slotEl(kind);
+    el.querySelector('[data-role=drop]').hidden = false;
+    el.querySelector('[data-role=loaded]').hidden = true;
+    el.querySelector('[data-role=emptyActions]').hidden = false;
+    el.querySelector('[data-role=thumbs]').innerHTML = '';
+    el.querySelector('input[type=file]').value = '';
+    setSlotState(kind, 'Not uploaded');
+    refresh();
+  }
+
+  ['po', 'inv'].forEach(kind => {
+    const el = slotEl(kind); const input = el.querySelector('input[type=file]'); const drop = el.querySelector('[data-role=drop]');
+    input.addEventListener('change', () => { acceptFile(kind, input.files[0]); input.value = ''; });
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+    drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) acceptFile(kind, f); });
+    el.addEventListener('click', async e => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      const act = b.dataset.act;
+      if (act === 'upload' || act === 'replace') input.click();
+      if (act === 'preview') preview(kind);
+      if (act === 'remove') { clearSlot(kind, false); setStatus(`${label(kind)} removed. Upload another file when ready.`); }
+      if (act === 'delete') {
+        if (await confirmBox(`Delete the ${label(kind)}?`, `“${S.docs[kind].name}” and everything extracted or compared from it will be cleared from this page. Your original file on disk is not affected.`, 'Delete')) {
+          clearSlot(kind, true); setStatus(`${label(kind)} deleted from the workspace.`);
+        }
+      }
+    });
+  });
+
+  /* ---------------- preview modal ---------------- */
+  async function preview(kindOrPdf, title) {
+    const pdf = typeof kindOrPdf === 'string' ? S.docs[kindOrPdf]?.pdf : kindOrPdf; if (!pdf) return;
+    const m = $('#previewModal'); $('#pvTitle').textContent = title || (S.docs[kindOrPdf]?.name || 'Preview');
+    const box = $('#pvPages'); box.innerHTML = ''; m.hidden = false; m.querySelector('[data-close]').focus();
+    const w = Math.min(1400, Math.max(600, box.clientWidth - 24)) * (window.devicePixelRatio > 1 ? 1.5 : 1);
+    for (let p = 1; p <= pdf.numPages; p++) { if (m.hidden) break; const cv = await renderPage(pdf, p, w); cv.style.width = Math.min(box.clientWidth - 24, 1000) + 'px'; box.appendChild(cv); }
+  }
+  $('#previewModal').addEventListener('click', e => { if (e.target.matches('[data-close]') || e.target.id === 'previewModal') $('#previewModal').hidden = true; });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#previewModal').hidden = true; });
+
+  /* ---------------- OCR (browser) ---------------- */
+  async function ocrPage(page, pnum, total) {
+    if (!window.Tesseract) throw new Error('The OCR engine did not load, so the scanned PDF cannot be read. Check the internet connection and reload.');
+    if (!tess) {
+      setStatus('Loading the OCR engine (about 10 MB, first time only)…');
+      tess = await Tesseract.createWorker('eng', 1, Object.assign({}, window.TESS_OPTIONS || {}, { logger: m => { if (m.status === 'recognizing text' && typeof m.progress === 'number') setProgress(((pnum - 1) + m.progress) / total); } }));
+    }
+    const scale = 300 / 72; const vp = page.getViewport({ scale });
+    const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+    const ctx = cv.getContext('2d', { willReadFrequently: true }); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    const img = ctx.getImageData(0, 0, cv.width, cv.height), d = img.data;
+    for (let i = 0; i < d.length; i += 4) { const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = d[i + 1] = d[i + 2] = g < 150 ? 0 : 255; }
+    ctx.putImageData(img, 0, 0);
+    const H = page.view[3], X0 = page.view[0]; const words = [];
+    for (const [pass, psm] of [['a', '6'], ['b', '3']]) {
+      setStatus(`Reading page ${pnum} of ${total} with OCR (pass ${pass === 'a' ? 1 : 2} of 2)…`);
+      await tess.setParameters({ tessedit_pageseg_mode: psm });
+      const r = await tess.recognize(cv);
+      (r.data.lines || []).forEach((l, li) => (l.words || []).forEach(w => {
+        if (!w.text.trim()) return;
+        words.push({ text: w.text, x0: X0 + w.bbox.x0 / scale, x1: X0 + w.bbox.x1 / scale, y0: H - w.bbox.y1 / scale, y1: H - w.bbox.y0 / scale, conf: w.confidence, line: li, pass });
+      }));
+    }
+    cv.width = cv.height = 0;
+    return { words };
+  }
+
+  /* ---------------- step 3: extract ---------------- */
+  $('#btnExtract').addEventListener('click', async () => {
+    S.busy = true; refresh(); setProgress(0);
+    try {
+      for (const kind of ['po', 'inv']) {
+        setSlotState(kind, 'Extracting…', 'busy'); setMeta(kind, 'extract', 'In progress');
+        setStatus(`Reading the ${label(kind)}…`);
+        const ext = await C.extractDocument(pdfjsLib, S.docs[kind].bytes, { ocr: ocrPage, log: m => setStatus(m) });
+        const failed = ext.pages.filter(p => p.ocrFailed).length;
+        const chars = ext.pages.reduce((s, p) => s + p.items.length, 0);
+        if (!chars) throw new Error(`No readable text was found in the ${label(kind)}. Upload a clearer scan or a text-based PDF.`);
+        S.ext[kind] = ext;
+        const low = ext.pages.flatMap(p => p.items).filter(i => i.src === 'ocr' && i.conf < 60).length;
+        setMeta(kind, 'extract', ext.ocrPages ? `Done · ${ext.ocrPages} page(s) by OCR${low ? `, ${low} low-confidence words` : ''}` : `Done · text layer (${chars} text runs)`);
+        setSlotState(kind, ext.ocrPages ? 'Extracted (OCR)' : 'Extracted', ext.ocrPages ? 'warn' : 'ok');
+        if (failed) setMeta(kind, 'extract', `${failed} page(s) could not be read`);
+        if (kind === 'inv' && ext.ocrPages) setStatus('The Tax Invoice is a scanned image. Corrections can only be drawn over it, so the layout may not be preserved exactly.');
+      }
+      setProgress(null);
+      setStatus('Extraction complete. Compare the documents next.');
+    } catch (e) {
+      console.error(e); setProgress(null);
+      ['po', 'inv'].forEach(k => { if (!S.ext[k] && S.docs[k]) { setSlotState(k, 'Extraction failed', 'bad'); setMeta(k, 'extract', 'Failed'); } });
+      setStatus(e.message || String(e), 'err');
+    } finally { S.busy = false; refresh(); }
+  });
+
+  /* ---------------- step 4: compare ---------------- */
+  $('#btnCompare').addEventListener('click', () => {
+    try {
+      S.cmp = C.compare(S.ext.po, S.ext.inv);
+      renderRaw(); renderTable(); renderValidation(); renderBankHint();
+      $('#results').hidden = false;
+      const n = S.cmp.rows.filter(r => r.status === C.ST.MISMATCH).length, rv = S.cmp.rows.filter(r => r.status === C.ST.REVIEW).length;
+      setStatus(`Comparison complete: ${n} mismatch${n === 1 ? '' : 'es'}, ${rv} item${rv === 1 ? '' : 's'} to review. Approve the corrections you want, then generate.`);
+      $('#results').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    } catch (e) { console.error(e); setStatus('Comparison failed: ' + e.message, 'err'); }
+    refresh();
+  });
+  $('#btnReview').addEventListener('click', () => $('#results').scrollIntoView({ behavior: 'smooth' }));
+
+  const statusClass = s => ({ MATCH: 'ok', MISMATCH: 'bad', 'REQUIRES MANUAL REVIEW': 'warn' }[s] || 'info');
+  const rowClass = s => s === C.ST.MISMATCH ? 'MISMATCH' : s === C.ST.REVIEW ? 'REVIEW' : '';
+  const isMissing = s => s === C.ST.NOPO || s === C.ST.NOINV;
+
+  function renderSummary() {
+    const rows = S.cmp.rows;
+    const cnt = f => rows.filter(f).length;
+    const items = [['ok', cnt(r => r.status === C.ST.MATCH), 'Matched'], ['bad', cnt(r => r.status === C.ST.MISMATCH), 'Mismatched'],
+      ['info', cnt(r => isMissing(r.status)), 'Missing'], ['warn', cnt(r => r.status === C.ST.REVIEW), 'Need review'], ['', cnt(r => r.approved), 'Approved']];
+    $('#summary').innerHTML = items.map(([c, n, l]) => `<div class="stat ${c}"><b>${n}</b><span>${l}</span></div>`).join('');
+  }
+
+  function renderTable() {
+    const tb = $('#cmpTable tbody'); tb.innerHTML = '';
+    let group = null;
+    const rows = S.cmp.rows.filter(r => S.filter === 'all' || (S.filter === 'missing' ? isMissing(r.status) : r.status === S.filter));
+    if (!rows.length) tb.innerHTML = '<tr><td colspan="6" class="none">Nothing in this view.</td></tr>';
+    rows.forEach(r => {
+      if (r.group !== group) { group = r.group; tb.insertAdjacentHTML('beforeend', `<tr class="group"><td colspan="6">${esc(group)}</td></tr>`); }
+      const numeric = ['qty', 'price', 'amount', 'discount'].includes(r.kind) || ['subtotal', 'vat', 'total'].includes(r.key);
+      const canEdit = !!r.edit;
+      const tr = document.createElement('tr'); tr.className = `row ${rowClass(r.status)} ${r.approved ? 'approved' : ''}`; tr.dataset.id = r.id;
+      tr.innerHTML = `
+        <td class="c-ok">${canEdit ? `<input type="checkbox" id="ap-${r.id}" ${r.approved ? 'checked' : ''} aria-label="Approve correction for ${esc(r.field)}">` : '<span class="none" title="No correction proposed">—</span>'}</td>
+        <td><span class="field">${esc(r.field)}</span>${r.note ? `<span class="note">${esc(r.note)}</span>` : ''}</td>
+        <td><div class="val ${numeric ? '' : 'text'}">${esc(r.po) || '<span class="none">—</span>'}</div></td>
+        <td><div class="val ${numeric ? '' : 'text'} ${r.approved ? 'strike' : ''}">${esc(r.inv) || '<span class="none">—</span>'}</div></td>
+        <td><span class="pill ${statusClass(r.status)}">${esc(r.status)}</span></td>
+        <td>${canEdit ? (numeric || String(r.proposed).length < 28 ? `<input class="proposed" id="pr-${r.id}" value="${esc(r.proposed)}" aria-label="Proposed value for ${esc(r.field)}" ${numeric ? 'inputmode="decimal"' : ''}>` : `<textarea class="proposed" id="pr-${r.id}" rows="3" aria-label="Proposed value for ${esc(r.field)}">${esc(r.proposed)}</textarea>`) : '<span class="none">No change</span>'}</td>`;
+      tb.appendChild(tr);
+    });
+    renderSummary();
+  }
+
+  $('#cmpTable').addEventListener('change', e => {
+    const tr = e.target.closest('tr.row'); if (!tr) return;
+    const r = S.cmp.rows.find(x => x.id === tr.dataset.id);
+    if (e.target.type === 'checkbox') r.approved = e.target.checked;
+    if (e.target.classList.contains('proposed')) {
+      const v = e.target.value.trim();
+      const numeric = ['qty', 'price', 'amount', 'discount'].includes(r.kind) || ['subtotal', 'vat', 'total'].includes(r.key);
+      if (numeric && v && C.parseDec(v) === null) { setStatus(`“${v}” is not a valid number for ${r.field}. Use digits, commas and a decimal point.`, 'err'); e.target.value = r.proposed; return; }
+      r.proposed = v; if (!v) r.approved = false;
+    }
+    if (r.key === 'total') syncWords();
+    staleOutput(); renderTable(); renderValidation();
+  });
+  $('#filters').addEventListener('click', e => {
+    const b = e.target.closest('.chip'); if (!b) return;
+    $$('#filters .chip').forEach(c => c.classList.toggle('on', c === b)); S.filter = b.dataset.filter; renderTable();
+  });
+
+  function staleOutput() { if (S.gen) { S.gen = null; S.qa = null; $('#output').hidden = true; setStatus('Approvals changed. Generate the corrected invoice again.'); refresh(); } }
+  ['#optBank', '#optBox', '#optBoxPages', '#optOriginal'].forEach(id => $(id).addEventListener('change', staleOutput));
+  $('#optBox').addEventListener('change', () => { $('#optBoxPages').disabled = !$('#optBox').checked; });
+
+  /** keep the amount in words consistent with the total the user approved */
+  function syncWords() {
+    const tr = S.cmp.rows.find(r => r.key === 'total'), wr = S.cmp.rows.find(r => r.key === 'words'); const words = S.cmp.inv.kv.words;
+    if (!wr || !words || !S.cmp.inv.totals.total) return;
+    const total = tr && tr.approved && tr.proposed ? C.parseDec(tr.proposed) : S.cmp.inv.totals.total.v;
+    const aw = C.amountInWords(total, words.text);
+    const same = aw.text.toLowerCase() === words.text.toLowerCase();
+    wr.proposed = same ? '' : aw.text; wr.approved = !same && aw.confident;
+    if (!wr.edit && !same && words.items[0]) wr.edit = { page: words.items[0].page, item: words.items[0], oldRaw: words.items[0].str.trim(), whole: true, inlinePrefix: words.inline ? words.prefix : null };
+    wr.note = same ? 'Matches the total.' : 'Updated to match the total.';
+  }
+
+  function renderValidation() {
+    S.validation = C.validate(S.cmp);
+    $('#validation').innerHTML = S.validation.length ? S.validation.map(c => {
+      const st = c.ok ? (c.warn ? 'pass' : 'pass') : 'fail';
+      return `<li class="${st}"><span class="ic">${c.ok ? '✓' : '!'}</span><div><b>${esc(c.name)}</b><small>${esc(c.detail)}</small></div></li>`;
+    }).join('') : '<li class="info"><span class="ic">i</span><div>No totals could be read from the invoice to validate.</div></li>';
+  }
+
+  function renderBankHint() {
+    const h = $('#bankHint');
+    const pages = S.ext.inv.pages; let found = null;
+    pages.forEach(p => { const r = !found && !p.scanned && C.findBankRegion(p); if (r) found = { page: p.n, r }; });
+    const pay = pages.flatMap(p => p.items).find(i => /bank\s*transfer/i.test(i.str));
+    const msgs = [];
+    if (!found) msgs.push('No bank details table was detected, so it cannot be removed and the authorization box has no place to go.');
+    else if (pay) msgs.push('Heads-up: the Mode of Payment line mentions bank transfer, but the bank details will be removed. The payment wording is not changed.');
+    if (!pages.some(p => p.items.some(i => /^\s*DUPLICATE\s*$/i.test(i.str)))) msgs.push('“DUPLICATE” does not appear on this invoice, so the copy label will be left as it is.');
+    h.hidden = !msgs.length; h.textContent = msgs.join(' ');
+  }
+
+  function renderRaw() {
+    const dump = ext => ext.pages.map(p => `— Page ${p.n}${p.scanned ? ' (OCR)' : ''} —\n` + p.lines.filter(l => l.pass !== 'b').map(l => l.text).join('\n')).join('\n\n');
+    $('#rawPo').textContent = dump(S.ext.po); $('#rawInv').textContent = dump(S.ext.inv);
+  }
+
+  /* ---------------- step 5: generate ---------------- */
+  $('#btnGenerate').addEventListener('click', async () => {
+    const opts = { removeBank: $('#optBank').checked, addAuthBox: $('#optBox').checked, boxPages: $('#optBoxPages').value, originalLabel: $('#optOriginal').checked };
+    const approved = S.cmp.rows.filter(r => r.approved && r.edit);
+    const failing = (S.validation || []).filter(c => !c.ok);
+    if (!approved.length && !opts.removeBank && !opts.addAuthBox && !opts.originalLabel) { setStatus('Nothing to apply. Approve at least one correction or choose an output format change.', 'err'); return; }
+    if (failing.length && !(await confirmBox('Some checks still fail', `${failing.map(c => c.name).join('; ')}. Generate the invoice anyway?`, 'Generate anyway'))) return;
+    S.busy = true; refresh(); setProgress(0.2); setStatus('Applying approved corrections to a copy of the invoice…');
+    try {
+      const gen = await C.generate(PDFLib, S.docs.inv.bytes, S.cmp, opts); gen.opts = opts;
+      setProgress(0.6); setStatus('Checking the corrected invoice against the original…');
+      S.gen = gen;
+      S.qa = await C.qualityCheck(pdfjsLib, PDFLib, S.docs.inv.bytes, gen.bytes, S.cmp, gen);
+      if (S.gen.pdf) S.gen.pdf.destroy();
+      S.gen.pdf = await pdfjsLib.getDocument(Object.assign({ data: gen.bytes.slice(0) }, C.pdfjsOptions)).promise;
+      renderOutput();
+      setProgress(null);
+      const fails = S.qa.filter(q => q.status === 'fail').length;
+      setStatus(fails ? `Corrected invoice created, but ${fails} verification check${fails > 1 ? 's' : ''} failed. Review them before using the file.` : 'Corrected invoice created and verified. Download it below.', fails ? 'err' : '');
+      $('#output').hidden = false; $('#output').scrollIntoView({ behavior: 'smooth' });
+    } catch (e) { console.error(e); setProgress(null); setStatus('Could not create the corrected PDF: ' + e.message, 'err'); }
+    finally { S.busy = false; refresh(); }
+  });
+
+  function invoiceNo() { const k = S.cmp && S.cmp.inv.kv.invoiceNo; return (k && k.text ? k.text : S.docs.inv.name.replace(/\.pdf$/i, '')).replace(/[^\w\-]+/g, '_'); }
+  function outName(suffix, ext) { return `Tax_Invoice_${invoiceNo()}_${suffix}.${ext}`; }
+
+  function renderOutput() {
+    const applied = S.gen.report.applied;
+    $('#outLede').textContent = `${applied.length} change${applied.length === 1 ? '' : 's'} applied to a copy of “${S.docs.inv.name}”. The uploaded original is unchanged.`;
+    $('#qa').innerHTML = S.qa.map(q => `<li class="${q.status}"><span class="ic">${{ pass: '✓', fail: '✕', warn: '!', info: 'i' }[q.status]}</span><div><b>${esc(q.name)}</b><small>${esc(q.detail)}</small></div></li>`).join('');
+    const sel = $('#cmpPage'); sel.innerHTML = '';
+    for (let p = 1; p <= S.gen.pdf.numPages; p++) sel.insertAdjacentHTML('beforeend', `<option value="${p}">${p}${S.gen.report.pagesTouched.includes(p) ? ' (edited)' : ''}</option>`);
+    sel.value = S.gen.report.pagesTouched[0] || 1; drawBeforeAfter();
+  }
+  async function drawBeforeAfter() {
+    const p = +$('#cmpPage').value; const w = 900;
+    await renderPage(S.docs.inv.pdf, p, w, $('#cvBefore')); await renderPage(S.gen.pdf, p, w, $('#cvAfter'));
+  }
+  $('#cmpPage').addEventListener('change', drawBeforeAfter);
+  $('#cvBefore').addEventListener('click', () => preview('inv'));
+  $('#cvAfter').addEventListener('click', () => S.gen && preview(S.gen.pdf, outName('CORRECTED', 'pdf')));
+
+  /* ---------------- downloads ---------------- */
+  function download(data, name, type) {
+    const blob = data instanceof Blob ? data : new Blob([data], { type });
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  $('#dlPdf').addEventListener('click', () => download(S.gen.bytes, outName('CORRECTED', 'pdf'), 'application/pdf'));
+  $('#dlCsv').addEventListener('click', () => download(buildCsv(), outName('DISCREPANCY_REPORT', 'csv'), 'text/csv;charset=utf-8'));
+  $('#dlJson').addEventListener('click', () => download(JSON.stringify(buildJson(), null, 2), outName('COMPARISON', 'json'), 'application/json'));
+  $('#dlReportPdf').addEventListener('click', reportPdf);
+  $('#btnReport').addEventListener('click', reportPdf);
+  async function reportPdf() { try { download(await buildReportPdf(), outName('DISCREPANCY_REPORT', 'pdf'), 'application/pdf'); } catch (e) { console.error(e); setStatus('Could not build the report PDF: ' + e.message, 'err'); } }
+
+  function correctionMade(r) {
+    if (!r.approved || !r.proposed) return r.status === C.ST.MATCH ? 'None needed' : 'Not changed';
+    if (!S.gen) return `Approved: ${r.proposed} (invoice not generated yet)`;
+    const a = S.gen.report.applied.find(x => x.field === r.field && x.to.includes(r.proposed));
+    return a ? `Corrected to ${r.proposed}` : 'Approved but not applied';
+  }
+  function buildCsv() {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const head = ['Group', 'Field', 'PO Value', 'Original Invoice Value', 'Status', 'Proposed Correction', 'Approved', 'Correction Made', 'Note'];
+    const lines = [head.map(q).join(',')];
+    S.cmp.rows.forEach(r => lines.push([r.group, r.field, r.po, r.inv, r.status, r.proposed, r.approved ? 'Yes' : 'No', correctionMade(r), r.note].map(q).join(',')));
+    lines.push(''); lines.push(q('Financial validation'));
+    (S.validation || []).forEach(c => lines.push([q(c.ok ? 'PASS' : 'FAIL'), q(c.name), q(c.detail)].join(',')));
+    if (S.qa) { lines.push(''); lines.push(q('Final verification')); S.qa.forEach(c => lines.push([q(c.status.toUpperCase()), q(c.name), q(c.detail)].join(','))); }
+    return '﻿' + lines.join('\r\n');
+  }
+  function buildJson() {
+    const t = x => x ? { value: C.fmt(x.v), derived: x.derived || null, label: x.label || null } : null;
+    return {
+      generatedAt: new Date().toISOString(),
+      files: { purchaseOrder: { name: S.docs.po.name, pages: S.docs.po.pages, ocrPages: S.ext.po.ocrPages }, taxInvoice: { name: S.docs.inv.name, pages: S.docs.inv.pages, ocrPages: S.ext.inv.ocrPages } },
+      rows: S.cmp.rows.map(r => ({ group: r.group, field: r.field, poValue: r.po, invoiceValue: r.inv, status: r.status, proposedCorrection: r.proposed || null, approved: !!r.approved, correctionMade: correctionMade(r), note: r.note || null })),
+      lineItems: { purchaseOrder: S.cmp.po.lineItems.map(li => ({ description: li.desc, qty: li.qty.raw, unitPrice: li.price.raw, amount: li.amount.raw })), taxInvoice: S.cmp.inv.lineItems.map(li => ({ code: li.code, description: li.desc, qty: li.qty.raw, unitPrice: li.price.raw, amount: li.amount.raw })) },
+      totals: { purchaseOrder: { subtotal: t(S.cmp.po.totals.subtotal), vat: t(S.cmp.po.totals.vat), total: t(S.cmp.po.totals.total), vatRate: S.cmp.po.totals.rate != null ? C.fmt(S.cmp.po.totals.rate) : null }, taxInvoice: { subtotal: t(S.cmp.inv.totals.subtotal), vat: t(S.cmp.inv.totals.vat), total: t(S.cmp.inv.totals.total) } },
+      validation: S.validation, outputOptions: S.gen ? S.gen.opts : null, applied: S.gen ? S.gen.report.applied : null, verification: S.qa,
+    };
+  }
+
+  /* report PDF (pdf-lib, standard fonts) */
+  const winAnsi = s => String(s ?? '').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[–—−]/g, '-').replace(/×/g, 'x').replace(/→/g, '->').replace(/…/g, '...').replace(/[✓]/g, 'OK').replace(/[^\x20-\x7E\xA0-\xFF]/g, '?');
+  async function buildReportPdf() {
+    const { PDFDocument, StandardFonts, rgb } = PDFLib;
+    const doc = await PDFDocument.create();
+    const F = await doc.embedFont(StandardFonts.Helvetica), B = await doc.embedFont(StandardFonts.HelveticaBold);
+    const W = 842, H = 595, M = 36; let page, y;
+    const ink = rgb(0.09, 0.13, 0.12), sub = rgb(0.35, 0.4, 0.38), line = rgb(0.83, 0.87, 0.85);
+    const col = { MATCH: rgb(0.09, 0.5, 0.24), MISMATCH: rgb(0.7, 0.14, 0.09), 'REQUIRES MANUAL REVIEW': rgb(0.6, 0.38, 0), def: rgb(0.24, 0.35, 0.5) };
+    const newPage = () => { page = doc.addPage([W, H]); y = H - M; page.drawText(winAnsi(`Discrepancy report · ${S.cmp.inv.kv.invoiceNo ? S.cmp.inv.kv.invoiceNo.text : S.docs.inv.name}`), { x: M, y: 18, size: 7.5, font: F, color: sub }); page.drawText(`Page ${doc.getPageCount()}`, { x: W - M - 40, y: 18, size: 7.5, font: F, color: sub }); };
+    const wrap = (text, font, size, width) => {
+      const out = []; String(winAnsi(text)).split('\n').forEach(par => {
+        let cur = ''; par.split(/\s+/).forEach(w => { const t = cur ? cur + ' ' + w : w; if (font.widthOfTextAtSize(t, size) <= width) cur = t; else { if (cur) out.push(cur); while (font.widthOfTextAtSize(w, size) > width && w.length > 1) { let k = w.length; while (k > 1 && font.widthOfTextAtSize(w.slice(0, k), size) > width) k--; out.push(w.slice(0, k)); w = w.slice(k); } cur = w; } });
+        out.push(cur);
+      }); return out;
+    };
+    const ensure = h => { if (y - h < M + 14) newPage(); };
+    const text = (s, o = {}) => { const size = o.size || 9, font = o.bold ? B : F; wrap(s, font, size, o.w || W - 2 * M).forEach(l => { ensure(size + 4); page.drawText(l, { x: o.x || M, y: y - size, size, font, color: o.color || ink }); y -= size + 3.5; }); };
+    newPage();
+    text('Purchase Order vs Tax Invoice: Discrepancy Report', { size: 16, bold: true }); y -= 4;
+    text(`Generated ${new Date().toLocaleString()}`, { color: sub });
+    text(`Purchase Order: ${S.docs.po.name} (${S.docs.po.pages} page(s)${S.ext.po.ocrPages ? ', read by OCR' : ''})`, { color: sub });
+    text(`Tax Invoice: ${S.docs.inv.name} (${S.docs.inv.pages} page(s))`, { color: sub }); y -= 6;
+    const cnt = f => S.cmp.rows.filter(f).length;
+    text(`Matched ${cnt(r => r.status === 'MATCH')}   ·   Mismatched ${cnt(r => r.status === 'MISMATCH')}   ·   Missing ${cnt(r => isMissing(r.status))}   ·   Requires review ${cnt(r => r.status === 'REQUIRES MANUAL REVIEW')}   ·   Approved ${cnt(r => r.approved)}`, { bold: true }); y -= 8;
+    const cols = [['Field', 130], ['PO value', 150], ['Original invoice value', 150], ['Status', 92], ['Correction made', 130], ['Note', W - 2 * M - 652]];
+    const header = () => { ensure(20); let x = M; page.drawRectangle({ x: M, y: y - 15, width: W - 2 * M, height: 15, color: rgb(0.93, 0.95, 0.94) }); cols.forEach(([h, w]) => { page.drawText(h.toUpperCase(), { x: x + 4, y: y - 10.5, size: 6.5, font: B, color: sub }); x += w; }); y -= 15; };
+    header();
+    S.cmp.rows.forEach(r => {
+      const cells = [r.field, r.po || '-', r.inv || '-', r.status, correctionMade(r), r.note || ''];
+      const wrapped = cells.map((c, i) => wrap(c, i === 0 ? B : F, 7.5, cols[i][1] - 8));
+      const h = Math.max(...wrapped.map(w => w.length)) * 9.5 + 6;
+      if (y - h < M + 14) { newPage(); header(); }
+      let x = M;
+      wrapped.forEach((ls, i) => { ls.forEach((l, k) => page.drawText(l, { x: x + 4, y: y - 10 - k * 9.5, size: 7.5, font: i === 0 || i === 3 ? B : F, color: i === 3 ? (col[r.status] || col.def) : ink })); x += cols[i][1]; });
+      y -= h; page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.5, color: line });
+    });
+    y -= 12; text('Financial validation', { size: 11, bold: true });
+    (S.validation || []).forEach(c => text(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name}: ${c.detail}`, { color: c.ok ? ink : col.MISMATCH }));
+    if (S.qa) { y -= 8; text('Final verification of the corrected invoice', { size: 11, bold: true }); S.qa.forEach(q => text(`${q.status.toUpperCase()}  ${q.name}: ${q.detail}`, { color: q.status === 'fail' ? col.MISMATCH : q.status === 'warn' ? col['REQUIRES MANUAL REVIEW'] : ink })); }
+    else { y -= 8; text('The corrected invoice has not been generated yet, so final verification is not included.', { color: sub }); }
+    return doc.save();
+  }
+
+  /* ---------------- reset ---------------- */
+  $('#btnReset').addEventListener('click', async () => {
+    if (!(await confirmBox('Clear the workspace?', 'Both documents, extracted data, comparison results, approvals and generated files will be cleared from this page. Your original files on disk are not affected.', 'Clear workspace'))) return;
+    clearSlot('po', true); clearSlot('inv', true);
+    if (S.gen && S.gen.pdf) S.gen.pdf.destroy();
+    S.gen = null; $('#optBank').checked = $('#optBox').checked = $('#optOriginal').checked = true; $('#optBoxPages').value = 'first'; $('#optBoxPages').disabled = false; S.filter = 'all';
+    $$('#filters .chip').forEach(c => c.classList.toggle('on', c.dataset.filter === 'all'));
+    setStatus('Workspace cleared. Upload both PDFs to begin.'); refresh();
+  });
+
+  /* ---------------- init ---------------- */
+  refresh();
+  if (libsMissing.length) setStatus(`${libsMissing.join(' and ')} could not be loaded. This page needs an internet connection the first time it opens.`, 'err');
+})();
+
+</script>
+</body>
+</html>
